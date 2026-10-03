@@ -1,3 +1,4 @@
 langchain-groq
 python-dotenv
 sqlalchemy
+langchain-core
