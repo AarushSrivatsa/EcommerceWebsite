@@ -11,8 +11,8 @@ class State(BaseModel):
     to_do_notes : str = ""
     current_decision : str = ""
 
-    section_user_wants_changed : Optional[int] = None
-    user_suggested_changes : Optional[str] = None
+    sections_to_change : list[int] = Field(default_factory=list)
+    suggested_changes : list[str] = Field(default_factory=list)
 
     estimated_duration_in_hours : float
     words_per_minute : int
