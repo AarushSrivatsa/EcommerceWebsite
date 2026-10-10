@@ -2,9 +2,11 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from config import DATABASE_URL
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import UUID, DateTime, func, Text, Integer, Float
+from sqlalchemy import UUID, DateTime, UniqueConstraint, func, Text, Integer, Float
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from sqlalchemy import ForeignKey, UniqueConstraint
+from pgvector.sqlalchemy import Vector
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -19,23 +21,20 @@ engine = create_async_engine(
 
 SessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
 
-def get_db():
-    session = SessionLocal()        
-    try:
-        yield session
-        session.commit()      
-    except Exception as e:
-        session.rollback()    
-        raise e              
-    finally:
-        session.close()  
-
+async def get_db():
+    async with SessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 class Base(DeclarativeBase):
     __abstract__ = True
     id : Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4,nullable=False)
-    created_at : Mapped[datetime] = mapped_column(DateTime,server_default=func.now())
-    updated_at : Mapped[datetime] = mapped_column(DateTime,server_default=func.now(),onupdate=lambda : datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class State(Base):
@@ -58,3 +57,16 @@ class State(Base):
     max_turns_per_section: Mapped[int] = mapped_column(Integer, default=3)
     turns_per_current_section: Mapped[int] = mapped_column(Integer, default=0)
 
+class Section(Base):
+    __tablename__ = "sections"
+    __table_args__ = (UniqueConstraint("state_id", "position"),)
+
+    state_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("states.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    word_count: Mapped[int] = mapped_column(Integer)
+    embedding = mapped_column(Vector(768))
+
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
