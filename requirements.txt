@@ -1,5 +1,8 @@
 langchain-groq
 python-dotenv
-sqlalchemy
+sqlalchemy[asyncio]
 langchain-core
 pgvector
+psycopg[binary]
+asyncpg
+alembic

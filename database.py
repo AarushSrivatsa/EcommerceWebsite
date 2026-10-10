@@ -2,11 +2,13 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from config import DATABASE_URL
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import UUID, DateTime, UniqueConstraint, func, Text, Integer, Float
+from sqlalchemy import UUID, DateTime, UniqueConstraint, func, Text, Integer, Float, text
 import uuid
 from datetime import datetime
 from sqlalchemy import ForeignKey, UniqueConstraint
 from pgvector.sqlalchemy import Vector
+import asyncio
+from sqlalchemy.dialects.postgresql import ARRAY
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -45,8 +47,8 @@ class State(Base):
     to_do_notes: Mapped[str] = mapped_column(Text, default="")
     current_decision: Mapped[str] = mapped_column(Text, default="")
 
-    section_user_wants_changed: Mapped[int | None] = mapped_column(Integer)
-    user_suggested_changes: Mapped[str | None] = mapped_column(Text)
+    sections_to_change: Mapped[list[int]] = mapped_column(ARRAY(Integer), default=list)
+    suggested_changes: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
 
     estimated_duration_in_hours: Mapped[float] = mapped_column(Float)
     words_per_minute: Mapped[int] = mapped_column(Integer)
@@ -69,4 +71,8 @@ class Section(Base):
 
 async def init_db():
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+
+if __name__ == "__main__":
+    asyncio.run(init_db(), loop_factory=asyncio.SelectorEventLoop)
