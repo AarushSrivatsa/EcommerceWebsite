@@ -38,7 +38,6 @@ class Base(DeclarativeBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-
 class State(Base):
     __tablename__ = "states"
 
@@ -76,3 +75,4 @@ async def init_db():
 
 if __name__ == "__main__":
     asyncio.run(init_db(), loop_factory=asyncio.SelectorEventLoop)
+    
