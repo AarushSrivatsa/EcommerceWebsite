@@ -6,3 +6,6 @@ pgvector
 psycopg[binary]
 asyncpg
 alembic
+kokoro>=0.9.4
+soundfile
+numpy
