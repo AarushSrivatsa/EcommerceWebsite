@@ -11,12 +11,11 @@ class BaseState(BaseModel):
     progress_context : Optional[str] = None
     user_prompted_sectional_changes : Optional[list[dict]] = None
     sections_completed : Optional[int] = None
-    similarity_score : {float}
 
     # generator manager
     router_prompt : Optional[str] = None
     generator_response : Optional[str] = None
-    similarity_score : Optional[str] = None
+    similarity_score : Optional[float] = None
 
     # duration information
     estimated_duration_in_hours : float
