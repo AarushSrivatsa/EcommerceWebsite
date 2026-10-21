@@ -45,6 +45,7 @@ class State(Base):
     complete_context_of_whats_done: Mapped[str] = mapped_column(Text, default="")
     to_do_notes: Mapped[str] = mapped_column(Text, default="")
     current_decision: Mapped[str] = mapped_column(Text, default="")
+    last_step : Mapped[str] = mapped_column(Text, default="")
 
     sections_to_change: Mapped[list[int]] = mapped_column(ARRAY(Integer), default=list)
     suggested_changes: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)

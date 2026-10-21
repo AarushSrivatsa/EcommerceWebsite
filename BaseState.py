@@ -2,23 +2,27 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from uuid import uuid4, UUID
 
-class State(BaseModel):
-
+class BaseState(BaseModel):
+    # Basic information
     id: UUID = Field(default_factory=uuid4)
+    user_prompt : str
 
-    main_prompt : str
-    complete_context_of_whats_done : str = ""
-    to_do_notes : str = ""
-    current_decision : str = ""
+    # generation details
+    progress_context : Optional[str] = None
+    user_prompted_sectional_changes : Optional[list[dict]] = None
+    sections_completed : Optional[int] = None
+    similarity_score : {float}
 
-    sections_to_change : list[int] = Field(default_factory=list)
-    suggested_changes : list[str] = Field(default_factory=list)
+    # generator manager
+    router_prompt : Optional[str] = None
+    generator_response : Optional[str] = None
+    similarity_score : Optional[str] = None
 
+    # duration information
     estimated_duration_in_hours : float
     words_per_minute : int
+    total_sections : Optional[int] = None
+    
 
-    sections_completed : int = 0
-    no_of_sections_total : Optional[int] = None
 
-    max_turns_per_section : int = 3
-    turns_per_current_section : int = 0
+

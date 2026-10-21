@@ -6,6 +6,9 @@ pgvector
 psycopg[binary]
 asyncpg
 alembic
+pydantic
 kokoro>=0.9.4
 soundfile
 numpy
+sqlalchemy
+langgraph
