@@ -17,6 +17,8 @@ class BaseState(BaseModel):
     generator_response : Optional[str] = None
     similarity_score : Optional[float] = None
     similarity_threshold : Optional[float] = None
+    generated_response_title : Optional[str] = None
+    generated_response_word_count : Optional[int] = None
 
     # duration information
     estimated_duration_in_hours : float
