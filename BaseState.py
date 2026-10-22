@@ -16,6 +16,7 @@ class BaseState(BaseModel):
     router_prompt : Optional[str] = None
     generator_response : Optional[str] = None
     similarity_score : Optional[float] = None
+    similarity_threshold : Optional[float] = None
 
     # duration information
     estimated_duration_in_hours : float
