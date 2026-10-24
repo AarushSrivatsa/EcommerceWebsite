@@ -24,7 +24,15 @@ class BaseState(BaseModel):
     estimated_duration_in_hours : float
     words_per_minute : int
     total_sections : Optional[int] = None
-    
+
+    # router control
+    next_step : Optional[str] = None
+    current_section : Optional[int] = None
+    rewrite_attempts : int = 0
+    section_word_limit_error_percentage : float = 10.0
+
+    # progress
+    current_node : Optional[str] = None
 
 
 
