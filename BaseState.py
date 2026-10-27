@@ -11,6 +11,7 @@ class BaseState(BaseModel):
     progress_context : Optional[str] = None
     user_prompted_sectional_changes : Optional[list[dict]] = None
     sections_completed : Optional[int] = None
+    video_type : Optional[str] = None            # "facts" or "story", decided by the router
 
     # generator manager
     router_prompt : Optional[str] = None
@@ -33,6 +34,3 @@ class BaseState(BaseModel):
 
     # progress
     current_node : Optional[str] = None
-
-
-

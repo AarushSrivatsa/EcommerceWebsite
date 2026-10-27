@@ -1,14 +1,15 @@
-# db.py
+# database.py
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from config import DATABASE_URL
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import UUID, DateTime, UniqueConstraint, func, Text, Integer, Float, text
 import uuid
 from datetime import datetime
-from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import ForeignKey
 from pgvector.sqlalchemy import Vector
 import asyncio
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import JSONB
+from BaseState import BaseState
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -41,23 +42,36 @@ class Base(DeclarativeBase):
 class State(Base):
     __tablename__ = "states"
 
-    main_prompt: Mapped[str] = mapped_column(Text)
-    complete_context_of_whats_done: Mapped[str] = mapped_column(Text, default="")
-    to_do_notes: Mapped[str] = mapped_column(Text, default="")
-    current_decision: Mapped[str] = mapped_column(Text, default="")
-    last_step : Mapped[str] = mapped_column(Text, default="")
+    # Basic information  (id comes from Base and is the BaseState id)
+    user_prompt: Mapped[str] = mapped_column(Text)
 
-    sections_to_change: Mapped[list[int]] = mapped_column(ARRAY(Integer), default=list)
-    suggested_changes: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    # generation details
+    progress_context: Mapped[str | None] = mapped_column(Text)
+    user_prompted_sectional_changes: Mapped[list | None] = mapped_column(JSONB)
+    sections_completed: Mapped[int | None] = mapped_column(Integer)
+    video_type: Mapped[str | None] = mapped_column(Text)
 
+    # generator manager
+    router_prompt: Mapped[str | None] = mapped_column(Text)
+    generator_response: Mapped[str | None] = mapped_column(Text)
+    similarity_score: Mapped[float | None] = mapped_column(Float)
+    similarity_threshold: Mapped[float | None] = mapped_column(Float)
+    generated_response_title: Mapped[str | None] = mapped_column(Text)
+    generated_response_word_count: Mapped[int | None] = mapped_column(Integer)
+
+    # duration information
     estimated_duration_in_hours: Mapped[float] = mapped_column(Float)
     words_per_minute: Mapped[int] = mapped_column(Integer)
+    total_sections: Mapped[int | None] = mapped_column(Integer)
 
-    sections_completed: Mapped[int] = mapped_column(Integer, default=0)
-    no_of_sections_total: Mapped[int | None] = mapped_column(Integer)
+    # router control
+    next_step: Mapped[str | None] = mapped_column(Text)
+    current_section: Mapped[int | None] = mapped_column(Integer)
+    rewrite_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    section_word_limit_error_percentage: Mapped[float] = mapped_column(Float, default=10.0)
 
-    max_turns_per_section: Mapped[int] = mapped_column(Integer, default=3)
-    turns_per_current_section: Mapped[int] = mapped_column(Integer, default=0)
+    # progress
+    current_node: Mapped[str | None] = mapped_column(Text)
 
 class Section(Base):
     __tablename__ = "sections"
@@ -69,6 +83,13 @@ class Section(Base):
     word_count: Mapped[int] = mapped_column(Integer)
     embedding = mapped_column(Vector(768))
 
+async def save_state(state: BaseState, update: dict) -> None:
+    """Save the state as it will look after this node's update (inserts the first time, updates after)."""
+    values = state.model_copy(update=update).model_dump()
+    async with SessionLocal() as session:
+        await session.merge(State(**values))
+        await session.commit()
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -76,4 +97,3 @@ async def init_db():
 
 if __name__ == "__main__":
     asyncio.run(init_db(), loop_factory=asyncio.SelectorEventLoop)
-    
