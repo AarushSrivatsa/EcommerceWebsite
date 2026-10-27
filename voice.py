@@ -15,6 +15,10 @@ PARAGRAPH_SILENCE = 0.9
 MIN_SPEED = 0.5
 MAX_SPEED = 2.0
 
+VIDEO_SIZE = (1920, 1080)
+VIDEO_FPS = 30
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+
 _CALIBRATION_TEXT = (
     'The old lighthouse stood quietly at the edge of the cliff, its light sweeping '
     'slowly across the dark water below. Waves rolled in without hurry, one after '
@@ -106,6 +110,7 @@ def _write_audio(
     paragraph_silence,
 ):
     duration_samples = 0
+    paragraph_samples = []
 
     with wave.open(str(output_path), 'wb') as audio_file:
         audio_file.setframerate(SAMPLE_RATE)
@@ -113,6 +118,7 @@ def _write_audio(
         audio_file.setnchannels(1)
 
         for paragraph_index, paragraph in enumerate(paragraphs):
+            paragraph_start = duration_samples
             sentences = _split_sentences(paragraph)
 
             results = pipeline(
@@ -141,7 +147,15 @@ def _write_audio(
                 audio_file.writeframes(silence)
                 duration_samples += len(silence) // 2
 
-    return duration_samples / SAMPLE_RATE
+            # Trailing pause counts toward this paragraph, so the
+            # per-paragraph durations add up to the full audio length.
+            paragraph_samples.append(duration_samples - paragraph_start)
+
+    paragraph_durations = [
+        samples / SAMPLE_RATE for samples in paragraph_samples
+    ]
+
+    return duration_samples / SAMPLE_RATE, paragraph_durations
 
 
 def _save_audio(wav_path, output_path):
@@ -171,6 +185,122 @@ def _save_audio(wav_path, output_path):
     wav_path.unlink(missing_ok=True)
 
 
+def _validate_images(image_paths):
+    images = [Path(path) for path in image_paths]
+
+    for image in images:
+        if not image.is_file():
+            raise FileNotFoundError(f'image not found: {image}')
+
+        if image.suffix.lower() not in IMAGE_EXTENSIONS:
+            raise ValueError(
+                f'unsupported image type: {image.name} '
+                f'(use {", ".join(sorted(IMAGE_EXTENSIONS))})'
+            )
+
+    return images
+
+
+def _plan_image_durations(paragraph_durations, image_count):
+    """Return how long each image stays on screen.
+
+    One image per paragraph -> each image matches its paragraph.
+    Otherwise paragraphs are grouped onto images by timeline position so
+    image changes still land on paragraph boundaries. If grouping leaves an
+    image with no time (more images than paragraphs), fall back to an even
+    split of the whole audio.
+    """
+    total = sum(paragraph_durations)
+
+    if image_count == len(paragraph_durations):
+        return list(paragraph_durations)
+
+    durations = [0.0] * image_count
+    start = 0.0
+
+    for paragraph_duration in paragraph_durations:
+        midpoint = start + paragraph_duration / 2
+        index = min(int(midpoint / total * image_count), image_count - 1)
+        durations[index] += paragraph_duration
+        start += paragraph_duration
+
+    if any(duration <= 0 for duration in durations):
+        durations = [total / image_count] * image_count
+
+    return durations
+
+
+def _concat_line_path(path):
+    escaped = path.resolve().as_posix().replace("'", "'\\''")
+    return f"file '{escaped}'"
+
+
+def _build_video(
+    images,
+    durations,
+    audio_path,
+    video_path,
+    size=VIDEO_SIZE,
+    fps=VIDEO_FPS,
+):
+    width, height = size
+    list_path = video_path.with_name(f'{video_path.stem}.tmp.txt')
+
+    lines = []
+    for image, duration in zip(images, durations):
+        lines.append(_concat_line_path(image))
+        lines.append(f'duration {duration:.4f}')
+
+    # concat demuxer ignores the last duration unless the file repeats.
+    lines.append(_concat_line_path(images[-1]))
+    list_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+    video_filter = (
+        f'scale={width}:{height}:force_original_aspect_ratio=decrease,'
+        f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,'
+        'setsar=1,format=yuv420p'
+    )
+
+    try:
+        subprocess.run(
+            [
+                'ffmpeg',
+                '-y',
+                '-loglevel',
+                'error',
+                '-f',
+                'concat',
+                '-safe',
+                '0',
+                '-i',
+                str(list_path),
+                '-i',
+                str(audio_path),
+                '-vf',
+                video_filter,
+                '-r',
+                str(fps),
+                '-c:v',
+                'libx264',
+                '-preset',
+                'medium',
+                '-crf',
+                '20',
+                '-c:a',
+                'aac',
+                '-b:a',
+                '192k',
+                '-movflags',
+                '+faststart',
+                '-shortest',
+                str(video_path),
+            ],
+            check=True,
+        )
+    finally:
+        list_path.unlink(missing_ok=True)
+
+
 def generate_voiceover(
     story_text,
     output_path,
@@ -178,6 +308,8 @@ def generate_voiceover(
     voice_model=DEFAULT_VOICE,
     sentence_silence=SENTENCE_SILENCE,
     paragraph_silence=PARAGRAPH_SILENCE,
+    image_paths=None,
+    video_path=None,
 ):
     paragraphs = _split_paragraphs(story_text)
 
@@ -191,6 +323,20 @@ def generate_voiceover(
 
     if output_path.suffix.lower() not in {'.mp3', '.wav'}:
         raise ValueError('output_path must end with .mp3 or .wav')
+
+    images = _validate_images(image_paths) if image_paths else []
+
+    if images:
+        video_path = (
+            Path(video_path)
+            if video_path
+            else output_path.with_suffix('.mp4')
+        )
+
+        if video_path.suffix.lower() != '.mp4':
+            raise ValueError('video_path must end with .mp4')
+
+        video_path.parent.mkdir(parents=True, exist_ok=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -232,7 +378,7 @@ def generate_voiceover(
         MAX_SPEED,
     )
 
-    duration = _write_audio(
+    duration, paragraph_durations = _write_audio(
         pipeline,
         voice_model,
         paragraphs,
@@ -253,7 +399,7 @@ def generate_voiceover(
             MAX_SPEED,
         )
 
-        duration = _write_audio(
+        duration, paragraph_durations = _write_audio(
             pipeline,
             voice_model,
             paragraphs,
@@ -266,9 +412,27 @@ def generate_voiceover(
         actual_wpm = word_count / (duration / 60)
         correction_passes = 1
 
+    # Build video from the lossless wav before _save_audio consumes it.
+    if images:
+        image_durations = _plan_image_durations(
+            paragraph_durations,
+            len(images),
+        )
+
+        try:
+            _build_video(
+                images,
+                image_durations,
+                wav_path,
+                video_path,
+            )
+        except Exception:
+            wav_path.unlink(missing_ok=True)
+            raise
+
     _save_audio(wav_path, output_path)
 
-    return {
+    result = {
         'audio_path': str(output_path),
         'duration_sec': round(duration, 2),
         'word_count': word_count,
@@ -278,3 +442,12 @@ def generate_voiceover(
         'voice_model': voice_model,
         'correction_passes_used': correction_passes,
     }
+
+    if images:
+        result['video_path'] = str(video_path)
+        result['image_count'] = len(images)
+        result['image_durations_sec'] = [
+            round(value, 2) for value in image_durations
+        ]
+
+    return result
