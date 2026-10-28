@@ -2,7 +2,8 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from config import DATABASE_URL
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import UUID, DateTime, UniqueConstraint, func, Text, Integer, Float, text
+from sqlalchemy import UUID, DateTime, UniqueConstraint, func, Text, Integer, Float, text, select
+from sqlalchemy import update as sql_update
 import uuid
 from datetime import datetime
 from sqlalchemy import ForeignKey
@@ -47,7 +48,7 @@ class State(Base):
 
     # generation details
     progress_context: Mapped[str | None] = mapped_column(Text)
-    user_prompted_sectional_changes: Mapped[list | None] = mapped_column(JSONB)
+    user_prompted_sectional_changes: Mapped[dict | None] = mapped_column(JSONB)   # {"1": "make it funnier"}
     sections_completed: Mapped[int | None] = mapped_column(Integer)
     video_type: Mapped[str | None] = mapped_column(Text)
 
@@ -70,6 +71,11 @@ class State(Base):
     rewrite_attempts: Mapped[int] = mapped_column(Integer, default=0)
     section_word_limit_error_percentage: Mapped[float] = mapped_column(Float, default=10.0)
 
+    # output
+    voice_model: Mapped[str | None] = mapped_column(Text)
+    audio_path: Mapped[str | None] = mapped_column(Text)
+    video_path: Mapped[str | None] = mapped_column(Text)
+
     # progress
     current_node: Mapped[str | None] = mapped_column(Text)
 
@@ -82,12 +88,35 @@ class Section(Base):
     text: Mapped[str] = mapped_column(Text)
     word_count: Mapped[int] = mapped_column(Integer)
     embedding = mapped_column(Vector(768))
+    image_prompt: Mapped[str | None] = mapped_column(Text)   # suggested visual, written by the LLM
+    image_path: Mapped[str | None] = mapped_column(Text)     # the image the user picked for this section
 
 async def save_state(state: BaseState, update: dict) -> None:
     """Save the state as it will look after this node's update (inserts the first time, updates after)."""
     values = state.model_copy(update=update).model_dump()
     async with SessionLocal() as session:
         await session.merge(State(**values))
+        await session.commit()
+
+async def load_section(state_id: uuid.UUID, position: int) -> str | None:
+    """Text of one saved section (used to show the router what a rewrite starts from)."""
+    async with SessionLocal() as session:
+        stmt = select(Section.text).where(Section.state_id == state_id, Section.position == position)
+        return (await session.execute(stmt)).scalar_one_or_none()
+
+async def load_sections(state_id: uuid.UUID) -> list[Section]:
+    """All saved sections of a script, in order."""
+    async with SessionLocal() as session:
+        stmt = select(Section).where(Section.state_id == state_id).order_by(Section.position)
+        return list((await session.execute(stmt)).scalars())
+
+async def set_section_image(state_id: uuid.UUID, position: int, image_path: str | None) -> None:
+    async with SessionLocal() as session:
+        await session.execute(
+            sql_update(Section)
+            .where(Section.state_id == state_id, Section.position == position)
+            .values(image_path=image_path)
+        )
         await session.commit()
 
 async def init_db():

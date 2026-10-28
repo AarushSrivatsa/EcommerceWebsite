@@ -67,6 +67,7 @@ def _split_paragraphs(text):
         for paragraph in paragraphs
         if paragraph.strip()
     ]
+split_paragraphs = _split_paragraphs      # public name, nodes.py uses it to count paragraphs per sectionsplit_paragraphs = _split_paragraphs      # public name, nodes.py uses it to count paragraphs per section
 
 
 def _split_sentences(text):
@@ -201,15 +202,32 @@ def _validate_images(image_paths):
     return images
 
 
-def _plan_image_durations(paragraph_durations, image_count):
+def _plan_image_durations(
+    paragraph_durations,
+    image_count,
+    section_paragraph_counts=None,
+):
     """Return how long each image stays on screen.
 
-    One image per paragraph -> each image matches its paragraph.
-    Otherwise paragraphs are grouped onto images by timeline position so
+    With section_paragraph_counts (paragraphs per section, one image per
+    section) each image lasts as long as its section's paragraphs.
+
+    Otherwise: one image per paragraph -> each image matches its paragraph.
+    Else paragraphs are grouped onto images by timeline position so
     image changes still land on paragraph boundaries. If grouping leaves an
     image with no time (more images than paragraphs), fall back to an even
     split of the whole audio.
     """
+    if section_paragraph_counts is not None:
+        durations = []
+        index = 0
+
+        for count in section_paragraph_counts:
+            durations.append(sum(paragraph_durations[index:index + count]))
+            index += count
+
+        return durations
+
     total = sum(paragraph_durations)
 
     if image_count == len(paragraph_durations):
@@ -228,7 +246,6 @@ def _plan_image_durations(paragraph_durations, image_count):
         durations = [total / image_count] * image_count
 
     return durations
-
 
 def _concat_line_path(path):
     escaped = path.resolve().as_posix().replace("'", "'\\''")
@@ -310,6 +327,7 @@ def generate_voiceover(
     paragraph_silence=PARAGRAPH_SILENCE,
     image_paths=None,
     video_path=None,
+    section_paragraph_counts=None,
 ):
     paragraphs = _split_paragraphs(story_text)
 
@@ -321,10 +339,19 @@ def generate_voiceover(
 
     output_path = Path(output_path)
 
+
     if output_path.suffix.lower() not in {'.mp3', '.wav'}:
         raise ValueError('output_path must end with .mp3 or .wav')
 
     images = _validate_images(image_paths) if image_paths else []
+    if section_paragraph_counts is not None and images and (
+        len(section_paragraph_counts) != len(images)
+        or sum(section_paragraph_counts) != len(paragraphs)
+    ):
+        raise ValueError(
+            'section_paragraph_counts must have one entry per image '
+            'and add up to the number of paragraphs'
+        )
 
     if images:
         video_path = (
@@ -417,6 +444,7 @@ def generate_voiceover(
         image_durations = _plan_image_durations(
             paragraph_durations,
             len(images),
+            section_paragraph_counts,
         )
 
         try:

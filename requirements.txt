@@ -10,5 +10,6 @@ pydantic
 kokoro>=0.9.4
 soundfile
 numpy
-sqlalchemy
-langgraph
+langgraph>=0.4
+sentence-transformers
+langgraph-checkpoint-postgres
