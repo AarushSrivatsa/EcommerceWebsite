@@ -89,7 +89,7 @@ class Section(Base):
     word_count: Mapped[int] = mapped_column(Integer)
     embedding = mapped_column(Vector(768))
     image_prompt: Mapped[str | None] = mapped_column(Text)   # suggested visual, written by the LLM
-    image_path: Mapped[str | None] = mapped_column(Text)     # the image the user picked for this section
+    image_link: Mapped[str | None] = mapped_column(Text)     # the image the user picked for this section
 
 async def save_state(state: BaseState, update: dict) -> None:
     """Save the state as it will look after this node's update (inserts the first time, updates after)."""

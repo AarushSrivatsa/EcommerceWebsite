@@ -10,6 +10,6 @@ pydantic
 kokoro>=0.9.4
 soundfile
 numpy
-langgraph>=0.4
+langgraph
 sentence-transformers
 langgraph-checkpoint-postgres
