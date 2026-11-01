@@ -27,15 +27,13 @@ class BaseState(BaseModel):
     total_sections : Optional[int] = None
 
     # router control
-    next_step : Optional[str] = None             # router: write/push/review   review: rewrite/render/review
+    next_step : Optional[str] = None             # router: write / push / finish
     current_section : Optional[int] = None
     rewrite_attempts : int = 0
     section_word_limit_error_percentage : float = 10.0
 
-    # output
+    # used later by the video service (the graph itself never renders anything)
     voice_model : str = "af_heart"
-    audio_path : Optional[str] = None
-    video_path : Optional[str] = None
 
     # progress
     current_node : Optional[str] = None

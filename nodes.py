@@ -3,22 +3,18 @@ load_dotenv()
 
 import asyncio
 import json
-from pathlib import Path
 
 from langchain_groq import ChatGroq
-from langgraph.types import interrupt
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
 
 from BaseState import BaseState
-from config import OUTPUT_DIR
-from database import SessionLocal, Section, save_state, load_section, load_sections, set_section_image
+from database import SessionLocal, Section, save_state, load_section
 
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold
 FALLBACK_SIMILARITY_THRESHOLD = 0.88
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"   # 768 dimensions, matches Vector(768) in database.py
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}   # same as voice.py (kept here so tests don't import kokoro)
 
 brief_schema = {
     "type": "object",
@@ -76,55 +72,6 @@ def similarity_limit(state: BaseState) -> float:
     return SIMILARITY_THRESHOLDS.get(state.video_type, FALLBACK_SIMILARITY_THRESHOLD)
 
 
-def _section_number(key, section_count: int) -> int | None:
-    try:
-        number = int(key)
-    except (TypeError, ValueError):
-        return None
-    return number if 1 <= number <= section_count else None
-
-
-def parse_review(answer: dict, section_count: int) -> tuple[dict, dict, list]:
-    """Turns the user's review answer into (images, changes, problems).
-    images  {section: path or None}   None clears the image
-    changes {section: text}           blank texts are ignored
-    problems: things that could not be applied"""
-    images, changes, problems = {}, {}, []
-
-    for key, path in (answer.get("images") or {}).items():
-        number = _section_number(key, section_count)
-        if number is None:
-            problems.append(f"image for section {key}: there is no such section")
-        elif not path:
-            images[number] = None
-        elif not Path(path).is_file() or Path(path).suffix.lower() not in IMAGE_EXTENSIONS:
-            problems.append(f"image for section {number}: file not found or unsupported type ({path})")
-        else:
-            images[number] = str(path)
-
-    for key, text in (answer.get("changes") or {}).items():
-        number = _section_number(key, section_count)
-        if number is None:
-            problems.append(f"change for section {key}: there is no such section")
-        elif str(text).strip():
-            changes[number] = str(text).strip()
-
-    return images, changes, problems
-
-
-def fill_images(paths: list) -> list | None:
-    """One image per section. A section without an image reuses the previous one, and leading gaps use the
-    first image given. Returns None when no section has an image (audio only)."""
-    first = next((path for path in paths if path), None)
-    if first is None:
-        return None
-    filled, last = [], first
-    for path in paths:
-        last = path or last
-        filled.append(last)
-    return filled
-
-
 # ── embeddings ────────────────────────────────────────────────────────────────
 _embedder = None
 
@@ -137,6 +84,15 @@ def _embed_sync(text: str) -> list[float]:
 
 async def embed(text: str) -> list[float]:
     return await asyncio.to_thread(_embed_sync, text)            # keep the event loop free
+
+
+async def suggest_image_prompt(text: str) -> str | None:
+    """One-line description of the image that fits a section. Never raises: it is only a suggestion."""
+    try:
+        reply = await summary_llm.ainvoke([("system", IMAGE_PROMPT_SYSTEM), ("user", text)])
+        return reply.content.strip() or None
+    except Exception:
+        return None
 
 
 # ── router ────────────────────────────────────────────────────────────────────
@@ -193,9 +149,9 @@ async def router_node(state: BaseState) -> dict:
             await save_state(state, update)
             return update
 
-    # ── 3. nothing waiting and everything saved, nothing to rewrite: hand over to the user ──
+    # ── 3. nothing waiting, everything saved, nothing to rewrite: the graph is done ──
     elif state.total_sections and saved >= state.total_sections and not changes:
-        update = {"next_step": "review", "current_node": "router"}
+        update = {"next_step": "finish", "current_node": "router"}
         await save_state(state, update)
         return update
 
@@ -297,10 +253,11 @@ async def writer_node(state: BaseState) -> dict:
 # ── push ──────────────────────────────────────────────────────────────────────
 async def push_section_node(state: BaseState) -> dict:
     """Saves the approved section (insert, or replace if that position exists) with a suggested image
-    description, and clears the waiting section. A rewrite keeps the image the user already picked."""
+    description, and clears the waiting section. The user's image is kept on a rewrite, but the section's
+    video is marked as needing a re-render (content_rev is bumped)."""
     text = state.generator_response
     embedding = await embed(text)
-    image_reply = await summary_llm.ainvoke([("system", IMAGE_PROMPT_SYSTEM), ("user", text)])
+    image_prompt = await suggest_image_prompt(text)
 
     stmt = insert(Section).values(
         state_id=state.id,
@@ -308,7 +265,9 @@ async def push_section_node(state: BaseState) -> dict:
         text=text,
         word_count=state.generated_response_word_count or len(text.split()),
         embedding=embedding,
-        image_prompt=image_reply.content.strip(),
+        image_prompt=image_prompt,
+        video_status="pending",
+        content_rev=1,
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["state_id", "position"],
@@ -317,6 +276,9 @@ async def push_section_node(state: BaseState) -> dict:
             "word_count": stmt.excluded.word_count,
             "embedding": stmt.excluded.embedding,
             "image_prompt": stmt.excluded.image_prompt,      # image_path is not touched
+            "video_status": "pending",
+            "video_error": None,
+            "content_rev": Section.content_rev + 1,
             "updated_at": func.now(),
         },
     )
@@ -330,88 +292,6 @@ async def push_section_node(state: BaseState) -> dict:
         "generated_response_title": None,
         "generated_response_word_count": None,
         "similarity_score": None,
-    }
-    await save_state(state, update)
-    return update
-
-
-# ── review (human in the loop) ────────────────────────────────────────────────
-async def review_node(state: BaseState) -> dict:
-    """Pauses the graph and shows the user every section. The user's answer (the resume value) looks like:
-        {"changes": {1: "make it funnier", 4: "shorter"},     # rewritten by the router, only these sections
-         "images":  {1: "images/a.png", 3: None},             # image per section, None clears it
-         "approve": True}                                      # script is good: render audio and video
-    If there are changes they win over approve: the sections are rewritten and the user reviews again.
-    Everything before interrupt() runs again on resume, so it only reads."""
-    sections = await load_sections(state.id)
-    label = "Fact" if state.video_type == "facts" else "Chapter"
-    view = [
-        {"section": s.position, "title": f"{label} {s.position:02d}", "text": s.text, "words": s.word_count,
-         "image_prompt": s.image_prompt, "image_path": s.image_path}
-        for s in sections
-    ]
-
-    notice = None
-    while True:
-        answer = interrupt({
-            "message": "Review the script. Send changes per section, set images, or approve to render.",
-            "notice": notice,
-            "sections": view,
-        }) or {}
-        images, changes, problems = parse_review(answer, len(sections))
-        if not problems:
-            break
-        notice = "Nothing was applied. Send the whole answer again. Problems: " + "; ".join(problems)
-
-    for number, path in images.items():
-        await set_section_image(state.id, number, path)
-
-    if changes:                                     # the router rewrites these sections, lowest number first
-        update = {"next_step": "rewrite", "user_prompted_sectional_changes": changes, "rewrite_attempts": 0}
-    elif answer.get("approve"):
-        update = {"next_step": "render"}
-    else:
-        update = {"next_step": "review"}            # only images changed (or nothing): ask again
-    update["current_node"] = "review"
-    await save_state(state, update)
-    return update
-
-
-# ── render (audio, then video) ────────────────────────────────────────────────
-async def render_node(state: BaseState) -> dict:
-    """Voices the whole script, then builds the video with one image per section (if any images were set)."""
-    from voice import generate_voiceover, split_paragraphs      # kokoro/torch only load when rendering
-
-    sections = await load_sections(state.id)
-    if [s.position for s in sections] != list(range(1, (state.total_sections or 0) + 1)):
-        raise ValueError("saved sections are not numbered 1..total_sections without gaps")
-
-    texts = [s.text for s in sections]
-    images = fill_images([s.image_path for s in sections])
-    folder = Path(OUTPUT_DIR) / str(state.id)
-
-    options = {}
-    if images:
-        options = {
-            "image_paths": images,
-            "video_path": folder / "video.mp4",
-            "section_paragraph_counts": [len(split_paragraphs(text)) for text in texts],
-        }
-
-    result = await asyncio.to_thread(                           # TTS and ffmpeg are blocking
-        generate_voiceover,
-        "\n\n".join(texts),
-        folder / "voiceover.mp3",
-        target_wpm=state.words_per_minute,
-        voice_model=state.voice_model,
-        **options,
-    )
-
-    update = {
-        "next_step": "finished",
-        "current_node": "render",
-        "audio_path": result["audio_path"],
-        "video_path": result.get("video_path"),
     }
     await save_state(state, update)
     return update

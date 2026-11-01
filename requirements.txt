@@ -1,3 +1,7 @@
+fastapi
+uvicorn[standard]
+python-multipart
+httpx
 langchain-groq
 python-dotenv
 sqlalchemy[asyncio]
@@ -12,4 +16,3 @@ soundfile
 numpy
 langgraph
 sentence-transformers
-langgraph-checkpoint-postgres

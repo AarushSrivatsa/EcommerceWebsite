@@ -1,14 +1,12 @@
 import asyncio
 import json
-import pathlib
-import tempfile
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from langgraph.graph import END
 import nodes
-from nodes import router_node, parse_review, fill_images
-from edges import route_after_router, route_after_review
+from nodes import router_node
+from edges import route_after_router
 from BaseState import BaseState
 
 
@@ -85,9 +83,9 @@ async def test_router():
     out = await router_node(waiting.model_copy(update={"similarity_score": 0.99, "rewrite_attempts": 3}))
     assert out["next_step"] == "push"
 
-    # all sections saved, nothing pending -> hand over to the user
+    # all sections saved, nothing pending -> the graph finishes
     out = await router_node(start.model_copy(update={"sections_completed": 10}))
-    assert out["next_step"] == "review"
+    assert out["next_step"] == "finish"
 
     # section count unknown -> the LLM picks it and it is stored
     out = await router_node(start.model_copy(update={"total_sections": None}))
@@ -96,7 +94,7 @@ async def test_router():
     # user changes pending, nothing waiting -> rewrite of the lowest section, starting from its saved text
     changes = {5: "shorter", 2: "make it funnier"}
     out = await router_node(start.model_copy(update={"sections_completed": 10, "user_prompted_sectional_changes": changes}))
-    assert out["next_step"] == "write" and out["current_section"] == 2     # not "review", and 2 before 5
+    assert out["next_step"] == "write" and out["current_section"] == 2     # not "finish", and 2 before 5
     assert out["router_prompt"].startswith("Title: Fact 02\n")
     assert "make it funnier" in sent_to_brief_llm() and "OLD TEXT OF THE SECTION" in sent_to_brief_llm()
     assert "shorter" not in sent_to_brief_llm()                 # only this section's change is sent
@@ -129,33 +127,10 @@ async def test_router():
     # routing edges
     assert route_after_router(waiting.model_copy(update={"next_step": "write"})) == "writer"
     assert route_after_router(waiting.model_copy(update={"next_step": "push"})) == "push_section"
-    assert route_after_router(waiting.model_copy(update={"next_step": "review"})) == "review"
-    assert route_after_review(waiting.model_copy(update={"next_step": "rewrite"})) == "router"
-    assert route_after_review(waiting.model_copy(update={"next_step": "render"})) == "render"
-    assert route_after_review(waiting.model_copy(update={"next_step": "review"})) == "review"
+    assert route_after_router(waiting.model_copy(update={"next_step": "finish"})) == END
 
     print("router tests passed")
 
 
-def test_review_helpers():
-    with tempfile.TemporaryDirectory() as folder:
-        good = pathlib.Path(folder) / "a.png"
-        good.write_bytes(b"")
-        images, changes, problems = parse_review({
-            "images": {"1": str(good), 2: "missing.png", 99: str(good), 4: None},
-            "changes": {"3": "  shorter ", 5: "   ", "x": "y"},
-        }, section_count=10)
-        assert images == {1: str(good), 4: None}                # string keys work, None clears
-        assert changes == {3: "shorter"}                        # blank change ignored
-        assert len(problems) == 3                               # missing file, section 99, key "x"
-
-    assert fill_images([None, "a", None, "b"]) == ["a", "a", "a", "b"]
-    assert fill_images(["a", "b"]) == ["a", "b"]
-    assert fill_images([None, None]) is None
-
-    print("review helper tests passed")
-
-
 if __name__ == "__main__":
     asyncio.run(test_router())
-    test_review_helpers()
