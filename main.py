@@ -1,4 +1,4 @@
-"""The super robot: starts the app and plugs the routers together."""
+"""The super robot: starts the app and plugs and the combines the router mini lion robots together."""
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
