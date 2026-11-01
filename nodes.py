@@ -27,12 +27,16 @@ brief_schema = {
     "additionalProperties": False,
 }
 
-brief_llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.4).bind(
+# gpt-oss "thinks" before answering; with the default budget the thinking can eat all the tokens and Groq then
+# returns an empty generation (json_validate_failed). So: low reasoning effort and a roomy token limit.
+_BRIEF_KWARGS = dict(model="openai/gpt-oss-120b", temperature=0.4, max_tokens=4096, reasoning_effort="low")
+brief_llm = ChatGroq(**_BRIEF_KWARGS).bind(
     response_format={
         "type": "json_schema",
         "json_schema": {"name": "brief", "strict": True, "schema": brief_schema},
     }
 )
+brief_fallback_llm = ChatGroq(**_BRIEF_KWARGS)      # no schema mode: asked for JSON in plain words instead
 summary_llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0.2)    # also writes the image suggestions
 writer_llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.8)
 
@@ -93,6 +97,41 @@ async def suggest_image_prompt(text: str) -> str | None:
         return reply.content.strip() or None
     except Exception:
         return None
+
+
+BRIEF_ATTEMPTS = 3
+
+
+def _valid_brief(data) -> bool:
+    return (isinstance(data, dict) and isinstance(data.get("brief"), str) and data["brief"].strip() != ""
+            and data.get("video_type") in ("facts", "story") and isinstance(data.get("total_sections"), int))
+
+
+async def get_brief(messages: list) -> dict:
+    """Asks the manager LLM for the brief. Groq's strict JSON mode sometimes fails or returns nothing, so retry a
+    few times, then fall back to a plain request for JSON. Raises only if everything fails."""
+    last_error = None
+    for _ in range(BRIEF_ATTEMPTS):
+        try:
+            data = json.loads((await brief_llm.ainvoke(messages)).content)
+            if _valid_brief(data):
+                return data
+            last_error = ValueError(f"incomplete brief: {data!r}")
+        except Exception as exc:                       # 400 json_validate_failed, empty or broken JSON
+            last_error = exc
+
+    try:
+        reply = await brief_fallback_llm.ainvoke(messages + [(
+            "user", "Reply with ONE JSON object and nothing else: "
+                    '{"video_type": "facts" or "story", "brief": "...", "total_sections": <integer>}')])
+        text = reply.content
+        data = json.loads(text[text.index("{"): text.rindex("}") + 1])
+        if _valid_brief(data):
+            return data
+        last_error = ValueError(f"incomplete brief: {data!r}")
+    except Exception as exc:
+        last_error = exc
+    raise RuntimeError(f"the manager LLM did not return a usable brief: {last_error}")
 
 
 # ── router ────────────────────────────────────────────────────────────────────
@@ -200,8 +239,7 @@ async def router_node(state: BaseState) -> dict:
         fixes = "\n".join(f"- {problem}" for problem in problems)
         request += f"\n\n<rejected_section>\n{state.generator_response}\n</rejected_section>\n\n<corrections>\n{fixes}\n</corrections>"
 
-    reply = await brief_llm.ainvoke([("system", BRIEF_SYSTEM), ("user", request)])
-    data = json.loads(reply.content)
+    data = await get_brief([("system", BRIEF_SYSTEM), ("user", request)])
 
     video_type = state.video_type or data["video_type"]       # decided once, then fixed
     label = "Fact" if video_type == "facts" else "Chapter"
