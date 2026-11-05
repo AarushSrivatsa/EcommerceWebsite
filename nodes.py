@@ -14,6 +14,7 @@ from database import SessionLocal, Section, save_state, load_section
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold
 FALLBACK_SIMILARITY_THRESHOLD = 0.88
+WRITER_ATTEMPTS = 3                   # tries when the writer LLM comes back empty
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"   # 768 dimensions, matches Vector(768) in database.py
 
 brief_schema = {
@@ -38,7 +39,8 @@ brief_llm = ChatGroq(**_BRIEF_KWARGS).bind(
 )
 brief_fallback_llm = ChatGroq(**_BRIEF_KWARGS)      # no schema mode: asked for JSON in plain words instead
 summary_llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0.2)    # also writes the image suggestions
-writer_llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.8)
+# same reasoning limit as the brief LLM, so the thinking cannot use up all the tokens and leave an empty reply
+writer_llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.8, max_tokens=8192, reasoning_effort="low")
 
 BRIEF_SYSTEM = """You are the manager of a YouTube video script generator. A separate writer LLM writes the script one section at a time, and it remembers nothing between sections. You never write a section yourself. You write the brief the writer works from.
 
@@ -264,8 +266,14 @@ async def writer_node(state: BaseState) -> dict:
     title_line, _, brief = state.router_prompt.partition("\n")      # "Title: Fact 04" + the brief
     title = title_line.removeprefix("Title:").strip()
 
-    reply = await writer_llm.ainvoke([("system", WRITER_SYSTEM), ("user", brief)])
-    text = reply.content.strip()
+    text = ""
+    for _ in range(WRITER_ATTEMPTS):
+        reply = await writer_llm.ainvoke([("system", WRITER_SYSTEM), ("user", brief)])
+        text = reply.content.strip()
+        if text:
+            break
+    if not text:
+        raise RuntimeError("the writer LLM returned an empty section")
 
     embedding = await embed(text)
     distance = Section.embedding.cosine_distance(embedding)

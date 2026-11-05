@@ -67,7 +67,6 @@ def _split_paragraphs(text):
         for paragraph in paragraphs
         if paragraph.strip()
     ]
-split_paragraphs = _split_paragraphs      # public name, nodes.py uses it to count paragraphs per sectionsplit_paragraphs = _split_paragraphs      # public name, nodes.py uses it to count paragraphs per section
 
 
 def _split_sentences(text):

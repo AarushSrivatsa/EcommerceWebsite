@@ -1,481 +1,160 @@
-import re
+"""Builds the videos: one per section (voiceover + its image), then one final video stitched from them.
+
+Kokoro and ffmpeg are heavy, so they run in a thread and one section is rendered at a time. The finished files
+live in the Supabase buckets; OUTPUT_DIR is only scratch space for a job and is cleaned up when the job ends.
+"""
+import asyncio
+import logging
+import shutil
 import subprocess
-import wave
+import tempfile
+import uuid
 from pathlib import Path
 
-import numpy as np
-from kokoro import KPipeline
+import database as db
+import storage
+from config import OUTPUT_DIR, IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
+from voice import DEFAULT_VOICE, VIDEO_SIZE, generate_voiceover
+
+log = logging.getLogger("video_service")
+
+_render_lock = asyncio.Lock()      # one section render at a time
 
 
-DEFAULT_VOICE = 'af_heart'
-DEFAULT_WPM = 140
-SAMPLE_RATE = 24000
-SENTENCE_SILENCE = 0.35
-PARAGRAPH_SILENCE = 0.9
-MIN_SPEED = 0.5
-MAX_SPEED = 2.0
-
-VIDEO_SIZE = (1920, 1080)
-VIDEO_FPS = 30
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
-
-_CALIBRATION_TEXT = (
-    'The old lighthouse stood quietly at the edge of the cliff, its light sweeping '
-    'slowly across the dark water below. Waves rolled in without hurry, one after '
-    'another, folding softly onto the sand. Somewhere in the distance a bell buoy '
-    'rang, a low and steady sound that seemed to belong to the night itself. Nothing '
-    'moved quickly here. Even the wind took its time, drifting through the tall '
-    'grass on the dunes and settling again. A single boat light blinked far out on '
-    'the horizon, patient and unhurried, as if it too understood there was nowhere '
-    'else it needed to be.'
-)
-
-_PIPELINE_CACHE = {}
-_RATE_CACHE = {}
+# ── small helpers ─────────────────────────────────────────────────────────────
+def _scratch_dir() -> Path:
+    """A fresh temporary folder for one job."""
+    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="job-", dir=OUTPUT_DIR))
 
 
-def _load_pipeline(voice_model):
-    lang_code = voice_model[0]
-
-    if lang_code not in _PIPELINE_CACHE:
-        _PIPELINE_CACHE[lang_code] = KPipeline(
-            lang_code=lang_code,
-            device='cpu',
-            repo_id='hexgrad/Kokoro-82M',
-        )
-
-    return _PIPELINE_CACHE[lang_code]
+def _run_ffmpeg(*args: str) -> None:
+    result = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {result.stderr.strip()[-300:]}")
 
 
-def _get_audio(result):
-    audio = result.audio if hasattr(result, 'audio') else result[2]
-
-    if hasattr(audio, 'detach'):
-        audio = audio.detach().cpu().numpy()
-
-    return np.asarray(audio)
-
-
-def _count_words(text):
-    return len(text.split())
+def _dark_card() -> Path:
+    """The picture shown for a section that has no image of its own."""
+    card = Path(OUTPUT_DIR) / "dark_card.png"
+    if not card.exists():
+        card.parent.mkdir(parents=True, exist_ok=True)
+        width, height = VIDEO_SIZE
+        _run_ffmpeg("-f", "lavfi", "-i", f"color=c=0x101010:s={width}x{height}", "-frames:v", "1", str(card))
+    return card
 
 
-def _split_paragraphs(text):
-    paragraphs = re.split(r'\n\s*\n', text.strip())
-    return [
-        ' '.join(paragraph.split())
-        for paragraph in paragraphs
-        if paragraph.strip()
-    ]
-split_paragraphs = _split_paragraphs      # public name, nodes.py uses it to count paragraphs per sectionsplit_paragraphs = _split_paragraphs      # public name, nodes.py uses it to count paragraphs per section
-
-
-def _split_sentences(text):
-    return [
-        sentence
-        for sentence in re.split(r'(?<=[.!?])\s+', text.strip())
-        if sentence
-    ]
-
-
-def _get_speaking_rate(pipeline, voice_model):
-    if voice_model not in _RATE_CACHE:
-        sample_count = sum(
-            len(_get_audio(result))
-            for result in pipeline(
-                _CALIBRATION_TEXT,
-                voice=voice_model,
-                speed=1.0,
-            )
-        )
-
-        duration = sample_count / SAMPLE_RATE
-        _RATE_CACHE[voice_model] = (
-            _count_words(_CALIBRATION_TEXT) / duration
-        )
-
-    return _RATE_CACHE[voice_model]
-
-
-def _silence(seconds):
-    return bytes(int(SAMPLE_RATE * seconds) * 2)
-
-
-def _write_audio(
-    pipeline,
-    voice_model,
-    paragraphs,
-    output_path,
-    speed,
-    sentence_silence,
-    paragraph_silence,
-):
-    duration_samples = 0
-    paragraph_samples = []
-
-    with wave.open(str(output_path), 'wb') as audio_file:
-        audio_file.setframerate(SAMPLE_RATE)
-        audio_file.setsampwidth(2)
-        audio_file.setnchannels(1)
-
-        for paragraph_index, paragraph in enumerate(paragraphs):
-            paragraph_start = duration_samples
-            sentences = _split_sentences(paragraph)
-
-            results = pipeline(
-                '\n'.join(sentences),
-                voice=voice_model,
-                speed=speed,
-                split_pattern=r'\n+',
-            )
-
-            for sentence_index, result in enumerate(results):
-                audio = np.clip(_get_audio(result), -1.0, 1.0)
-                audio_bytes = (
-                    audio * 32767
-                ).astype(np.int16).tobytes()
-
-                audio_file.writeframes(audio_bytes)
-                duration_samples += len(audio_bytes) // 2
-
-                if sentence_index < len(sentences) - 1:
-                    silence = _silence(sentence_silence)
-                    audio_file.writeframes(silence)
-                    duration_samples += len(silence) // 2
-
-            if paragraph_index < len(paragraphs) - 1:
-                silence = _silence(paragraph_silence)
-                audio_file.writeframes(silence)
-                duration_samples += len(silence) // 2
-
-            # Trailing pause counts toward this paragraph, so the
-            # per-paragraph durations add up to the full audio length.
-            paragraph_samples.append(duration_samples - paragraph_start)
-
-    paragraph_durations = [
-        samples / SAMPLE_RATE for samples in paragraph_samples
-    ]
-
-    return duration_samples / SAMPLE_RATE, paragraph_durations
-
-
-def _save_audio(wav_path, output_path):
-    if output_path.suffix.lower() == '.wav':
-        wav_path.replace(output_path)
-        return
-
-    subprocess.run(
-        [
-            'ffmpeg',
-            '-y',
-            '-loglevel',
-            'error',
-            '-i',
-            str(wav_path),
-            '-ar',
-            '44100',
-            '-codec:a',
-            'libmp3lame',
-            '-b:a',
-            '128k',
-            str(output_path),
-        ],
-        check=True,
+def _make_section_files(text: str, words_per_minute: int, voice_model: str | None,
+                        image: Path | None, folder: Path) -> tuple[Path, Path]:
+    """Voiceover (mp3) and video (mp4) of one section: the image stays on screen while the text is read."""
+    audio, video = folder / "section.mp3", folder / "section.mp4"
+    generate_voiceover(
+        text, audio,
+        target_wpm=words_per_minute,
+        voice_model=voice_model or DEFAULT_VOICE,
+        image_paths=[image or _dark_card()],
+        video_path=video,
     )
-
-    wav_path.unlink(missing_ok=True)
-
-
-def _validate_images(image_paths):
-    images = [Path(path) for path in image_paths]
-
-    for image in images:
-        if not image.is_file():
-            raise FileNotFoundError(f'image not found: {image}')
-
-        if image.suffix.lower() not in IMAGE_EXTENSIONS:
-            raise ValueError(
-                f'unsupported image type: {image.name} '
-                f'(use {", ".join(sorted(IMAGE_EXTENSIONS))})'
-            )
-
-    return images
+    return audio, video
 
 
-def _plan_image_durations(
-    paragraph_durations,
-    image_count,
-    section_paragraph_counts=None,
-):
-    """Return how long each image stays on screen.
-
-    With section_paragraph_counts (paragraphs per section, one image per
-    section) each image lasts as long as its section's paragraphs.
-
-    Otherwise: one image per paragraph -> each image matches its paragraph.
-    Else paragraphs are grouped onto images by timeline position so
-    image changes still land on paragraph boundaries. If grouping leaves an
-    image with no time (more images than paragraphs), fall back to an even
-    split of the whole audio.
-    """
-    if section_paragraph_counts is not None:
-        durations = []
-        index = 0
-
-        for count in section_paragraph_counts:
-            durations.append(sum(paragraph_durations[index:index + count]))
-            index += count
-
-        return durations
-
-    total = sum(paragraph_durations)
-
-    if image_count == len(paragraph_durations):
-        return list(paragraph_durations)
-
-    durations = [0.0] * image_count
-    start = 0.0
-
-    for paragraph_duration in paragraph_durations:
-        midpoint = start + paragraph_duration / 2
-        index = min(int(midpoint / total * image_count), image_count - 1)
-        durations[index] += paragraph_duration
-        start += paragraph_duration
-
-    if any(duration <= 0 for duration in durations):
-        durations = [total / image_count] * image_count
-
-    return durations
-
-def _concat_line_path(path):
-    escaped = path.resolve().as_posix().replace("'", "'\\''")
-    return f"file '{escaped}'"
-
-
-def _build_video(
-    images,
-    durations,
-    audio_path,
-    video_path,
-    size=VIDEO_SIZE,
-    fps=VIDEO_FPS,
-):
-    width, height = size
-    list_path = video_path.with_name(f'{video_path.stem}.tmp.txt')
-
+def _stitch(files: list[Path], output: Path) -> None:
+    """Joins the section videos in order. They were all encoded the same way, so nothing is re-encoded."""
     lines = []
-    for image, duration in zip(images, durations):
-        lines.append(_concat_line_path(image))
-        lines.append(f'duration {duration:.4f}')
-
-    # concat demuxer ignores the last duration unless the file repeats.
-    lines.append(_concat_line_path(images[-1]))
-    list_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-
-    video_filter = (
-        f'scale={width}:{height}:force_original_aspect_ratio=decrease,'
-        f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,'
-        'setsar=1,format=yuv420p'
-    )
-
-    try:
-        subprocess.run(
-            [
-                'ffmpeg',
-                '-y',
-                '-loglevel',
-                'error',
-                '-f',
-                'concat',
-                '-safe',
-                '0',
-                '-i',
-                str(list_path),
-                '-i',
-                str(audio_path),
-                '-vf',
-                video_filter,
-                '-r',
-                str(fps),
-                '-c:v',
-                'libx264',
-                '-preset',
-                'medium',
-                '-crf',
-                '20',
-                '-c:a',
-                'aac',
-                '-b:a',
-                '192k',
-                '-movflags',
-                '+faststart',
-                '-shortest',
-                str(video_path),
-            ],
-            check=True,
-        )
-    finally:
-        list_path.unlink(missing_ok=True)
+    for file in files:
+        path = file.resolve().as_posix().replace("'", "'\\''")      # how ffmpeg's list format escapes a quote
+        lines.append(f"file '{path}'")
+    list_file = output.with_suffix(".txt")
+    list_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _run_ffmpeg("-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", "-movflags", "+faststart", str(output))
 
 
-def generate_voiceover(
-    story_text,
-    output_path,
-    target_wpm=DEFAULT_WPM,
-    voice_model=DEFAULT_VOICE,
-    sentence_silence=SENTENCE_SILENCE,
-    paragraph_silence=PARAGRAPH_SILENCE,
-    image_paths=None,
-    video_path=None,
-    section_paragraph_counts=None,
-):
-    paragraphs = _split_paragraphs(story_text)
+# ── one section ───────────────────────────────────────────────────────────────
+async def render_section_video(section_id: uuid.UUID) -> None:
+    """Builds the voiceover and video of one section and stores them. Calling it twice, or for a section that
+    changed or was deleted meanwhile, is safe: the stale work is thrown away."""
+    section = await db.get_section_by_id(section_id)
+    if section is None or section.video_status == "ready":
+        return
+    rev = section.content_rev
+    if not await db.set_section_processing(section_id, rev):
+        return                                                   # it changed since: a newer call handles it
 
-    if not paragraphs:
-        raise ValueError('story_text cannot be empty')
+    async with _render_lock:
+        section = await db.get_section_by_id(section_id)         # it may have waited here a while
+        if section is None or section.content_rev != rev or section.video_status == "ready":
+            return
+        state = await db.get_state(section.state_id)
+        if state is None:
+            return
 
-    if target_wpm <= 0:
-        raise ValueError('target_wpm must be greater than zero')
-
-    output_path = Path(output_path)
-
-
-    if output_path.suffix.lower() not in {'.mp3', '.wav'}:
-        raise ValueError('output_path must end with .mp3 or .wav')
-
-    images = _validate_images(image_paths) if image_paths else []
-    if section_paragraph_counts is not None and images and (
-        len(section_paragraph_counts) != len(images)
-        or sum(section_paragraph_counts) != len(paragraphs)
-    ):
-        raise ValueError(
-            'section_paragraph_counts must have one entry per image '
-            'and add up to the number of paragraphs'
-        )
-
-    if images:
-        video_path = (
-            Path(video_path)
-            if video_path
-            else output_path.with_suffix('.mp4')
-        )
-
-        if video_path.suffix.lower() != '.mp4':
-            raise ValueError('video_path must end with .mp4')
-
-        video_path.parent.mkdir(parents=True, exist_ok=True)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    wav_path = output_path.with_name(
-        f'{output_path.stem}.tmp.wav'
-    )
-
-    pipeline = _load_pipeline(voice_model)
-
-    word_count = _count_words(story_text)
-    words_per_second = _get_speaking_rate(
-        pipeline,
-        voice_model,
-    )
-
-    sentence_count = sum(
-        len(_split_sentences(paragraph))
-        for paragraph in paragraphs
-    )
-
-    pause_duration = (
-        (sentence_count - len(paragraphs)) * sentence_silence
-        + (len(paragraphs) - 1) * paragraph_silence
-    )
-
-    target_duration = word_count / target_wpm * 60
-    speech_duration = max(
-        1,
-        target_duration - pause_duration,
-    )
-
-    speed = (
-        (word_count / words_per_second)
-        / speech_duration
-    )
-
-    speed = min(
-        max(speed, MIN_SPEED),
-        MAX_SPEED,
-    )
-
-    duration, paragraph_durations = _write_audio(
-        pipeline,
-        voice_model,
-        paragraphs,
-        wav_path,
-        speed,
-        sentence_silence,
-        paragraph_silence,
-    )
-
-    actual_wpm = word_count / (duration / 60)
-    correction_passes = 0
-
-    if abs(actual_wpm - target_wpm) / target_wpm > 0.02:
-        speed *= duration / target_duration
-
-        speed = min(
-            max(speed, MIN_SPEED),
-            MAX_SPEED,
-        )
-
-        duration, paragraph_durations = _write_audio(
-            pipeline,
-            voice_model,
-            paragraphs,
-            wav_path,
-            speed,
-            sentence_silence,
-            paragraph_silence,
-        )
-
-        actual_wpm = word_count / (duration / 60)
-        correction_passes = 1
-
-    # Build video from the lossless wav before _save_audio consumes it.
-    if images:
-        image_durations = _plan_image_durations(
-            paragraph_durations,
-            len(images),
-            section_paragraph_counts,
-        )
-
+        folder = _scratch_dir()
         try:
-            _build_video(
-                images,
-                image_durations,
-                wav_path,
-                video_path,
-            )
-        except Exception:
-            wav_path.unlink(missing_ok=True)
-            raise
+            image = None
+            if section.image_path:
+                image = await storage.download_to(
+                    IMAGES_BUCKET, section.image_path, folder / f"image{Path(section.image_path).suffix}")
 
-    _save_audio(wav_path, output_path)
+            audio, video = await asyncio.to_thread(
+                _make_section_files, section.text, state.words_per_minute, state.voice_model, image, folder)
 
-    result = {
-        'audio_path': str(output_path),
-        'duration_sec': round(duration, 2),
-        'word_count': word_count,
-        'target_wpm': target_wpm,
-        'actual_wpm': round(actual_wpm, 1),
-        'speed_used': round(speed, 4),
-        'voice_model': voice_model,
-        'correction_passes_used': correction_passes,
-    }
+            audio_path = f"{state.id}/{section.id}-{rev}.mp3"     # the revision in the name: a new render never
+            video_path = f"{state.id}/{section.id}-{rev}.mp4"     # overwrites the file the old one points to
+            await storage.upload_file(AUDIOS_BUCKET, audio_path, audio, "audio/mpeg")
+            await storage.upload_file(VIDEOS_BUCKET, video_path, video, "video/mp4")
 
-    if images:
-        result['video_path'] = str(video_path)
-        result['image_count'] = len(images)
-        result['image_durations_sec'] = [
-            round(value, 2) for value in image_durations
-        ]
+            old = await db.finish_section_render(section_id, rev, audio_path, video_path)
+            if old is None:                                       # changed or deleted while rendering
+                await storage.delete_quiet(AUDIOS_BUCKET, [audio_path])
+                await storage.delete_quiet(VIDEOS_BUCKET, [video_path])
+            else:                                                 # remove the files of the previous render
+                for bucket, old_file, new_file in ((AUDIOS_BUCKET, old[0], audio_path), (VIDEOS_BUCKET, old[1], video_path)):
+                    if old_file and old_file != new_file:
+                        await storage.delete_quiet(bucket, [old_file])
+        except Exception as exc:
+            log.exception("render failed for section %s", section_id)
+            await db.fail_section_render(section_id, rev, f"{type(exc).__name__}: {exc}"[:500])
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
-    return result
+
+async def render_all_pending(script_id: uuid.UUID) -> None:
+    """Renders every section whose video is not up to date, one after another."""
+    for section in await db.load_sections(script_id):
+        if section.video_status != "ready":
+            await render_section_video(section.id)
+
+
+# ── the final video ───────────────────────────────────────────────────────────
+async def convert_into_video(script_id: uuid.UUID) -> None:
+    """Stitches the section videos into the final video (after rebuilding any that are out of date).
+    The caller has already set final_video_status to 'processing'; this ends it as ready, outdated or failed."""
+    folder = _scratch_dir()
+    try:
+        await render_all_pending(script_id)
+
+        sections = await db.load_sections(script_id)
+        if not sections:
+            raise RuntimeError("the script has no sections")
+        for section in sections:
+            if section.video_status != "ready":
+                raise RuntimeError(f"section {section.position} has no finished video "
+                                   f"({section.video_status}: {section.video_error})")
+        snapshot = [(section.id, section.content_rev) for section in sections]    # what this video is made from
+
+        files = [await storage.download_to(VIDEOS_BUCKET, section.video_path, folder / f"{section.position:04d}.mp4")
+                 for section in sections]
+        final = folder / "final.mp4"
+        await asyncio.to_thread(_stitch, files, final)
+
+        path = f"{script_id}/final-{uuid.uuid4().hex[:8]}.mp4"
+        await storage.upload_file(VIDEOS_BUCKET, path, final, "video/mp4")
+
+        applied, old = await db.finish_final_video(script_id, path, snapshot)   # 'outdated' if a section changed meanwhile
+        await storage.delete_quiet(VIDEOS_BUCKET, [old] if applied else [path])
+    except Exception as exc:
+        log.exception("final video failed for %s", script_id)
+        await db.set_state_fields(script_id, final_video_status="failed",
+                                  final_video_error=f"{type(exc).__name__}: {exc}"[:500])
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
