@@ -21,8 +21,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # The models are baked into the image, so a restart or redeploy never downloads them again.
-# For a smaller, lighter voice model use KOKORO_MODEL=kokoro-v1.0.int8.onnx
-ARG KOKORO_MODEL=kokoro-v1.0.onnx
+# int8 is the small one (88 MB file, ~370 MB RAM). The full one is KOKORO_MODEL=kokoro-v1.0.onnx (310 MB file, ~600 MB RAM).
+ARG KOKORO_MODEL=kokoro-v1.0.int8.onnx
 ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/${KOKORO_MODEL} /models/kokoro.onnx
 ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin /models/voices.bin
 ENV KOKORO_MODEL_PATH=/models/kokoro.onnx \
