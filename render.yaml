@@ -6,7 +6,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: API_KEY
-        generateValue: true        # Render makes a random key. Read it in the dashboard and send it as the X-API-Key header.
+        generateValue: true        # Render makes a random key. Read it in the dashboard: it is the password of the website login box (any user name), or send it as the X-API-Key header.
       - key: GROQ_API_KEY
         sync: false                # secrets: Render asks for these when you create the service
       - key: DATABASE_URL          # postgresql+psycopg://... (the Supabase session pooler string)

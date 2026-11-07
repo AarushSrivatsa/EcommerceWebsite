@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 from fastapi import HTTPException, Security
-from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
 
 import database as db
 import storage
@@ -30,14 +30,23 @@ def spawn(coro) -> None:
 
 # ── access control ────────────────────────────────────────────────────────────
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)    # also gives /docs an Authorize button
+_basic = HTTPBasic(auto_error=False)
 
 
-async def require_api_key(key: str | None = Security(_api_key_header)) -> None:
-    """Every route needs the X-API-Key header. With no API_KEY configured on the server, nothing gets in."""
+def _same(a: str, b: str) -> bool:
+    return secrets.compare_digest(a.encode(), b.encode())
+
+
+async def require_api_key(key: str | None = Security(_api_key_header),
+                          basic: HTTPBasicCredentials | None = Security(_basic)) -> None:
+    """The API key can come as the X-API-Key header (scripts, curl) or as the password of the browser's
+    login box (the website: the 401 below makes the browser ask once, then it remembers).
+    With no API_KEY configured on the server, nothing gets in."""
     if not API_KEY:
         raise HTTPException(503, "API_KEY is not set on the server")
-    if not key or not secrets.compare_digest(key.encode(), API_KEY.encode()):
-        raise HTTPException(401, "missing or wrong X-API-Key")
+    if (key and _same(key, API_KEY)) or (basic and _same(basic.password, API_KEY)):
+        return
+    raise HTTPException(401, "missing or wrong API key", headers={"WWW-Authenticate": 'Basic realm="Script to video"'})
 
 
 # ── lookups ───────────────────────────────────────────────────────────────────

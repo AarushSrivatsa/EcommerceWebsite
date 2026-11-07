@@ -1,8 +1,7 @@
 // Tiny fetch wrapper for the FastAPI backend.
-// Base URL: VITE_API_BASE_URL (see .env.example), default http://localhost:8000.
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '')
-// The backend rejects requests without its API key (API_KEY on the server = VITE_API_KEY here).
-const API_KEY = import.meta.env.VITE_API_KEY
+// The backend serves this app, so requests go to the same origin. (`npm run dev` proxies them, see vite.config.ts.)
+// The backend asks for its API_KEY as a password: the browser shows a login box once and remembers it.
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
 export class ApiError extends Error {
   status: number
@@ -26,14 +25,11 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
-      headers: {
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
-      },
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
-    throw new ApiError(0, `Can’t reach the backend at ${BASE_URL}. Is it running?`)
+    throw new ApiError(0, 'Can’t reach the backend. Is it running?')
   }
 
   if (!response.ok) {
