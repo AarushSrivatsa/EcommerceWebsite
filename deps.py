@@ -1,14 +1,17 @@
 """Helpers every router uses: lookups that 404, background jobs, and the LangGraph instance."""
 import asyncio
 import logging
+import secrets
 import uuid
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Security
+from fastapi.security import APIKeyHeader
 
 import database as db
 import storage
 import video_service
 from BaseState import BaseState
+from config import API_KEY
 
 log = logging.getLogger("api")
 
@@ -23,6 +26,18 @@ def spawn(coro) -> None:
     task = asyncio.create_task(coro)
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
+
+
+# ── access control ────────────────────────────────────────────────────────────
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)    # also gives /docs an Authorize button
+
+
+async def require_api_key(key: str | None = Security(_api_key_header)) -> None:
+    """Every route needs the X-API-Key header. With no API_KEY configured on the server, nothing gets in."""
+    if not API_KEY:
+        raise HTTPException(503, "API_KEY is not set on the server")
+    if not key or not secrets.compare_digest(key.encode(), API_KEY.encode()):
+        raise HTTPException(401, "missing or wrong X-API-Key")
 
 
 # ── lookups ───────────────────────────────────────────────────────────────────

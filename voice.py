@@ -1,15 +1,16 @@
+import os
 import re
 import subprocess
 import wave
 from pathlib import Path
 
 import numpy as np
-from kokoro import KPipeline
+from kokoro_onnx import Kokoro
 
 
 DEFAULT_VOICE = 'af_heart'
 DEFAULT_WPM = 140
-SAMPLE_RATE = 24000
+SAMPLE_RATE = 24000          # what Kokoro produces
 SENTENCE_SILENCE = 0.35
 PARAGRAPH_SILENCE = 0.9
 MIN_SPEED = 0.5
@@ -30,30 +31,43 @@ _CALIBRATION_TEXT = (
     'else it needed to be.'
 )
 
-_PIPELINE_CACHE = {}
+# Kokoro runs through ONNX Runtime (no PyTorch). Models: kokoro-v1.0.onnx (full quality)
+# or kokoro-v1.0.int8.onnx (smaller and lighter), plus voices-v1.0.bin.
+MODEL_PATH = os.getenv('KOKORO_MODEL_PATH', 'models/kokoro-v1.0.onnx')
+VOICES_PATH = os.getenv('KOKORO_VOICES_PATH', 'models/voices-v1.0.bin')
+
+# first letter of a Kokoro voice name -> the language code kokoro-onnx wants
+LANGUAGES = {
+    'a': 'en-us', 'b': 'en-gb', 'e': 'es', 'f': 'fr-fr',
+    'h': 'hi', 'i': 'it', 'j': 'ja', 'p': 'pt-br', 'z': 'cmn',
+}
+
+_KOKORO = None
 _RATE_CACHE = {}
 
 
-def _load_pipeline(voice_model):
-    lang_code = voice_model[0]
+def _load_kokoro():
+    global _KOKORO
 
-    if lang_code not in _PIPELINE_CACHE:
-        _PIPELINE_CACHE[lang_code] = KPipeline(
-            lang_code=lang_code,
-            device='cpu',
-            repo_id='hexgrad/Kokoro-82M',
-        )
+    if _KOKORO is None:
+        _KOKORO = Kokoro(MODEL_PATH, VOICES_PATH)
 
-    return _PIPELINE_CACHE[lang_code]
+    return _KOKORO
 
 
-def _get_audio(result):
-    audio = result.audio if hasattr(result, 'audio') else result[2]
+def _speak(text, voice_model, speed):
+    """Speak one piece of text and return the audio as a float array."""
+    audio, sample_rate = _load_kokoro().create(
+        text,
+        voice=voice_model,
+        speed=speed,
+        lang=LANGUAGES.get(voice_model[0], 'en-us'),
+    )
 
-    if hasattr(audio, 'detach'):
-        audio = audio.detach().cpu().numpy()
+    if sample_rate != SAMPLE_RATE:
+        raise RuntimeError(f'expected {SAMPLE_RATE} Hz audio, got {sample_rate}')
 
-    return np.asarray(audio)
+    return audio
 
 
 def _count_words(text):
@@ -77,15 +91,11 @@ def _split_sentences(text):
     ]
 
 
-def _get_speaking_rate(pipeline, voice_model):
+def _get_speaking_rate(voice_model):
     if voice_model not in _RATE_CACHE:
         sample_count = sum(
-            len(_get_audio(result))
-            for result in pipeline(
-                _CALIBRATION_TEXT,
-                voice=voice_model,
-                speed=1.0,
-            )
+            len(_speak(sentence, voice_model, 1.0))
+            for sentence in _split_sentences(_CALIBRATION_TEXT)
         )
 
         duration = sample_count / SAMPLE_RATE
@@ -101,7 +111,6 @@ def _silence(seconds):
 
 
 def _write_audio(
-    pipeline,
     voice_model,
     paragraphs,
     output_path,
@@ -121,15 +130,8 @@ def _write_audio(
             paragraph_start = duration_samples
             sentences = _split_sentences(paragraph)
 
-            results = pipeline(
-                '\n'.join(sentences),
-                voice=voice_model,
-                speed=speed,
-                split_pattern=r'\n+',
-            )
-
-            for sentence_index, result in enumerate(results):
-                audio = np.clip(_get_audio(result), -1.0, 1.0)
+            for sentence_index, sentence in enumerate(sentences):
+                audio = np.clip(_speak(sentence, voice_model, speed), -1.0, 1.0)
                 audio_bytes = (
                     audio * 32767
                 ).astype(np.int16).tobytes()
@@ -370,13 +372,8 @@ def generate_voiceover(
         f'{output_path.stem}.tmp.wav'
     )
 
-    pipeline = _load_pipeline(voice_model)
-
     word_count = _count_words(story_text)
-    words_per_second = _get_speaking_rate(
-        pipeline,
-        voice_model,
-    )
+    words_per_second = _get_speaking_rate(voice_model)
 
     sentence_count = sum(
         len(_split_sentences(paragraph))
@@ -405,7 +402,6 @@ def generate_voiceover(
     )
 
     duration, paragraph_durations = _write_audio(
-        pipeline,
         voice_model,
         paragraphs,
         wav_path,
@@ -426,7 +422,6 @@ def generate_voiceover(
         )
 
         duration, paragraph_durations = _write_audio(
-            pipeline,
             voice_model,
             paragraphs,
             wav_path,

@@ -84,9 +84,9 @@ _embedder = None
 def _embed_sync(text: str) -> list[float]:
     global _embedder
     if _embedder is None:
-        from sentence_transformers import SentenceTransformer     # loaded on first use only
-        _embedder = SentenceTransformer(EMBEDDING_MODEL)
-    return _embedder.encode(text, normalize_embeddings=True).tolist()
+        from fastembed import TextEmbedding                       # loaded on first use only (ONNX, no PyTorch)
+        _embedder = TextEmbedding(EMBEDDING_MODEL)
+    return next(iter(_embedder.embed([text]))).tolist()
 
 async def embed(text: str) -> list[float]:
     return await asyncio.to_thread(_embed_sync, text)            # keep the event loop free
