@@ -1,6 +1,8 @@
 // Tiny fetch wrapper for the FastAPI backend.
 // Base URL: VITE_API_BASE_URL (see .env.example), default http://localhost:8000.
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+// The backend rejects requests without its API key (API_KEY on the server = VITE_API_KEY here).
+const API_KEY = import.meta.env.VITE_API_KEY
 
 export class ApiError extends Error {
   status: number
@@ -24,7 +26,10 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers: {
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
