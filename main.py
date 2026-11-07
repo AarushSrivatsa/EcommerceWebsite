@@ -2,7 +2,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -42,15 +42,14 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 @app.get("/health", include_in_schema=False)
 async def health():
-    """For Render's health check. Needs no API key (neither does the website itself: it is only html and js)."""
+    """For Render's health check."""
     return {"status": "ok"}
 
 
-protected = [Depends(deps.require_api_key)]
-app.include_router(scripts.router, dependencies=protected)
-app.include_router(sections.router, dependencies=protected)
-app.include_router(images.router, dependencies=protected)
-app.include_router(final_video.router, dependencies=protected)
+app.include_router(scripts.router)
+app.include_router(sections.router)
+app.include_router(images.router)
+app.include_router(final_video.router)
 
 
 # ── the website: the built Vue app (frontend/dist), served by this same app ────

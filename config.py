@@ -6,7 +6,6 @@ load_dotenv()
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 DATABASE_URL = os.getenv('DATABASE_URL')
 OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')          # scratch space for renders (temp files only)
-API_KEY = os.getenv('API_KEY')                           # every request must send it in the X-API-Key header
 
 # Supabase storage (use the service_role key, this runs on the server only)
 SUPABASE_URL = (os.getenv('SUPABASE_URL') or '').rstrip('/')

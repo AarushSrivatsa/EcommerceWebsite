@@ -1,17 +1,14 @@
 """Helpers every router uses: lookups that 404, background jobs, and the LangGraph instance."""
 import asyncio
 import logging
-import secrets
 import uuid
 
-from fastapi import HTTPException, Security
-from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
+from fastapi import HTTPException
 
 import database as db
 import storage
 import video_service
 from BaseState import BaseState
-from config import API_KEY
 
 log = logging.getLogger("api")
 
@@ -26,27 +23,6 @@ def spawn(coro) -> None:
     task = asyncio.create_task(coro)
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
-
-
-# ── access control ────────────────────────────────────────────────────────────
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)    # also gives /docs an Authorize button
-_basic = HTTPBasic(auto_error=False)
-
-
-def _same(a: str, b: str) -> bool:
-    return secrets.compare_digest(a.encode(), b.encode())
-
-
-async def require_api_key(key: str | None = Security(_api_key_header),
-                          basic: HTTPBasicCredentials | None = Security(_basic)) -> None:
-    """The API key can come as the X-API-Key header (scripts, curl) or as the password of the browser's
-    login box (the website: the 401 below makes the browser ask once, then it remembers).
-    With no API_KEY configured on the server, nothing gets in."""
-    if not API_KEY:
-        raise HTTPException(503, "API_KEY is not set on the server")
-    if (key and _same(key, API_KEY)) or (basic and _same(basic.password, API_KEY)):
-        return
-    raise HTTPException(401, "missing or wrong API key", headers={"WWW-Authenticate": 'Basic realm="Script to video"'})
 
 
 # ── lookups ───────────────────────────────────────────────────────────────────

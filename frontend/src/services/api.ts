@@ -1,6 +1,5 @@
 // Tiny fetch wrapper for the FastAPI backend.
 // The backend serves this app, so requests go to the same origin. (`npm run dev` proxies them, see vite.config.ts.)
-// The backend asks for its API_KEY as a password: the browser shows a login box once and remembers it.
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
 export class ApiError extends Error {
