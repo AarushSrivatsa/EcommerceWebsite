@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 from kokoro_onnx import Kokoro
 
+import memory
+
 
 DEFAULT_VOICE = 'af_heart'
 DEFAULT_WPM = 140
@@ -15,6 +17,12 @@ SENTENCE_SILENCE = 0.35
 PARAGRAPH_SILENCE = 0.9
 MIN_SPEED = 0.5
 MAX_SPEED = 2.0
+
+# Kokoro's working memory grows with the length of the text it speaks at once (about 250 MB for 40 characters,
+# 360 MB for 120, 510 MB for 200, 870 MB for 450). So sentences are spoken in pieces of at most this many characters.
+WINDOW_CHARS = 70
+WINDOW_SILENCE = 0.08
+RELOAD_EVERY = 6          # pieces spoken before the voice model is loaded afresh
 
 VIDEO_SIZE = (1920, 1080)
 VIDEO_FPS = 30
@@ -43,20 +51,66 @@ LANGUAGES = {
 }
 
 _KOKORO = None
+_USES = 0
 _RATE_CACHE = {}
 
 
 def _load_kokoro():
-    global _KOKORO
+    global _KOKORO, _USES
+
+    # ONNX Runtime keeps buffers for every text length it has seen, so its RAM creeps up while it speaks.
+    # A fresh model every few pieces (loading takes about a second) keeps that bounded.
+    if _KOKORO is not None and _USES >= RELOAD_EVERY:
+        release_model()
 
     if _KOKORO is None:
         _KOKORO = Kokoro(MODEL_PATH, VOICES_PATH)
+        _USES = 0
 
+    _USES += 1
     return _KOKORO
 
 
+def release_model():
+    """Drops the voice model from memory (it loads again, in about a second, when it is next needed)."""
+    global _KOKORO
+    _KOKORO = None
+    memory.free()
+
+
+def _windows(text, limit=None):
+    """Cuts a long sentence into pieces of at most `limit` characters, at a comma, semicolon or colon when
+    there is one, otherwise between words."""
+    limit = limit or WINDOW_CHARS
+    pieces = []
+    while len(text) > limit:
+        window = text[:limit]
+        cut = max(window.rfind(mark) for mark in (',', ';', ':'))
+        if cut < limit // 3:                          # no good punctuation: cut at the last space
+            cut = window.rfind(' ')
+        if cut <= 0:                                  # one enormous word: cut anywhere
+            cut = limit - 1
+        pieces.append(text[:cut + 1].strip())
+        text = text[cut + 1:].strip()
+    if text:
+        pieces.append(text)
+    return pieces
+
+
 def _speak(text, voice_model, speed):
-    """Speak one piece of text and return the audio as a float array."""
+    """Speak a sentence and return the audio as a float array (long sentences piece by piece)."""
+    pieces = _windows(text)
+    if len(pieces) == 1:
+        return _speak_piece(pieces[0], voice_model, speed)
+
+    gap = np.zeros(int(SAMPLE_RATE * WINDOW_SILENCE), dtype=np.float32)
+    parts = []
+    for piece in pieces:
+        parts += [_speak_piece(piece, voice_model, speed), gap]
+    return np.concatenate(parts[:-1])
+
+
+def _speak_piece(text, voice_model, speed):
     audio, sample_rate = _load_kokoro().create(
         text,
         voice=voice_model,
@@ -301,7 +355,13 @@ def _build_video(
                 '-c:v',
                 'libx264',
                 '-preset',
-                'medium',
+                'veryfast',
+                '-tune',
+                'stillimage',
+                '-x264-params',
+                'rc-lookahead=0:sync-lookahead=0:bframes=0',
+                '-threads',
+                '1',
                 '-crf',
                 '20',
                 '-c:a',
@@ -432,6 +492,8 @@ def generate_voiceover(
 
         actual_wpm = word_count / (duration / 60)
         correction_passes = 1
+
+    release_model()          # the voice is finished: free its memory before ffmpeg needs some
 
     # Build video from the lossless wav before _save_audio consumes it.
     if images:

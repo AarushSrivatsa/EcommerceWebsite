@@ -2,7 +2,7 @@ services:
   - type: web
     name: script-to-video
     runtime: docker
-    plan: standard                 # 2 GB RAM: the voice model and the embedder do not fit the 512 MB plans
+    plan: starter                  # 512 MB: the app is built to fit (peak about 450 MB while rendering). Free also has 512 MB but sleeps when idle and kills running jobs
     healthCheckPath: /health
     envVars:
       - key: GROQ_API_KEY

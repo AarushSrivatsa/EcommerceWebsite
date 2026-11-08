@@ -8,6 +8,7 @@ from langchain_groq import ChatGroq
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
 
+import memory
 from BaseState import BaseState
 from database import SessionLocal, Section, save_state, load_section
 
@@ -79,17 +80,18 @@ def similarity_limit(state: BaseState) -> float:
 
 
 # ── embeddings ────────────────────────────────────────────────────────────────
-_embedder = None
-
 def _embed_sync(text: str) -> list[float]:
-    global _embedder
-    if _embedder is None:
-        from fastembed import TextEmbedding                       # loaded on first use only (ONNX, no PyTorch)
-        _embedder = TextEmbedding(EMBEDDING_MODEL)
-    return next(iter(_embedder.embed([text]))).tolist()
+    from fastembed import TextEmbedding                           # ONNX, no PyTorch
+    embedder = TextEmbedding(EMBEDDING_MODEL)
+    try:
+        return next(iter(embedder.embed([text]))).tolist()
+    finally:
+        del embedder                                              # not kept: the voice model needs that RAM
+        memory.free()
 
 async def embed(text: str) -> list[float]:
-    return await asyncio.to_thread(_embed_sync, text)            # keep the event loop free
+    async with memory.heavy:                                      # never at the same time as the voice model
+        return await asyncio.to_thread(_embed_sync, text)         # keep the event loop free
 
 
 async def suggest_image_prompt(text: str) -> str | None:

@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 import database as db
+import memory
 import storage
 from config import OUTPUT_DIR, IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 from voice import DEFAULT_VOICE, VIDEO_SIZE, generate_voiceover
@@ -95,8 +96,9 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                 image = await storage.download_to(
                     IMAGES_BUCKET, section.image_path, folder / f"image{Path(section.image_path).suffix}")
 
-            audio, video = await asyncio.to_thread(
-                _make_section_files, section.text, state.words_per_minute, state.voice_model, image, folder)
+            async with memory.heavy:                              # the voice model never shares RAM with the embedder
+                audio, video = await asyncio.to_thread(
+                    _make_section_files, section.text, state.words_per_minute, state.voice_model, image, folder)
 
             audio_path = f"{state.id}/{section.id}-{rev}.mp3"     # the revision in the name: a new render never
             video_path = f"{state.id}/{section.id}-{rev}.mp4"     # overwrites the file the old one points to
