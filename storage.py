@@ -45,9 +45,20 @@ async def upload_bytes(bucket: str, path: str, data: bytes, content_type: str) -
     return path
 
 
+async def _chunks(file: Path, size: int = 1024 * 1024):
+    """The file in 1 MB pieces, so a big video is never held in memory all at once."""
+    with open(file, "rb") as handle:
+        while chunk := await asyncio.to_thread(handle.read, size):
+            yield chunk
+
+
 async def upload_file(bucket: str, path: str, file: Path, content_type: str) -> str:
-    data = await asyncio.to_thread(Path(file).read_bytes)
-    return await upload_bytes(bucket, path, data, content_type)
+    """Streams the file from disk (an hour of video is hundreds of MB: far too much to read into RAM)."""
+    response = await _http().post(_object(bucket, path), content=_chunks(file),
+                                  headers={"Content-Type": content_type, "x-upsert": "true",
+                                           "Content-Length": str(Path(file).stat().st_size)})
+    _check(response, f"upload {bucket}/{path}")
+    return path
 
 
 async def download_to(bucket: str, path: str, dest: Path) -> Path:
