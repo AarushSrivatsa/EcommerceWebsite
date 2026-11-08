@@ -25,6 +25,8 @@ const paths = {
   download: 'M12 4v11M7 11l5 5 5-5M5 20h14',
   layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5',
   book: 'M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h11',
+  copy: 'M8 8h12v12H8zM4 16V4h12',
+  upload: 'M12 16V5M7 9l5-5 5 5M5 20h14',
   loader: 'M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8',
 } as const
 

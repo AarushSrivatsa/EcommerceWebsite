@@ -123,16 +123,27 @@ export const projectsStore = {
   },
 
   // ---- sections ----
+  // Edits to a draft never build videos (that happens on approval); edits to an approved project rebuild the section.
   async updateSectionText(id: string, position: number, text: string) {
-    setSection(id, await service.updateSectionText(id, position, text))
+    setSection(id, await service.updateSectionText(id, position, text, !isDraftId(id)))
   },
 
   async rewriteSection(id: string, position: number, instruction: string) {
-    setSection(id, await service.rewriteSection(id, position, instruction))
+    setSection(id, await service.rewriteSection(id, position, instruction, !isDraftId(id)))
+  },
+
+  async setSectionImage(id: string, position: number, file: File) {
+    setSection(id, await service.setSectionImage(id, position, file, !isDraftId(id)))
+    await this.refreshProject(id)
+  },
+
+  async removeSectionImage(id: string, position: number) {
+    setSection(id, await service.removeSectionImage(id, position, !isDraftId(id)))
+    await this.refreshProject(id)
   },
 
   async addSection(id: string, text: string, position?: number) {
-    await service.addSection(id, text, position)
+    await service.addSection(id, text, position, !isDraftId(id))
     await this.loadSections(id) // positions of later sections shifted
     await this.refreshProject(id)
   },

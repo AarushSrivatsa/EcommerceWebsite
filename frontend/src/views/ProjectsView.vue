@@ -61,7 +61,7 @@ const visible = computed(() =>
 
 function open(p: Project) {
   if (p.generationStatus === 'draft') router.push({ name: 'review', params: { id: p.id } })
-  else if (p.generationStatus === 'generating' || p.finalVideoStatus === 'processing')
+  else if (p.generationStatus === 'generating' || p.generationStatus === 'failed' || p.finalVideoStatus === 'processing')
     router.push({ name: 'progress', params: { id: p.id } })
   else router.push({ name: 'project', params: { id: p.id } })
 }

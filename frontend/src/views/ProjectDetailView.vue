@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import AddSectionModal from '@/components/AddSectionModal.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import SceneThumb from '@/components/SceneThumb.vue'
+import RewriteModal from '@/components/RewriteModal.vue'
+import SectionImage from '@/components/SectionImage.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { voices } from '@/data/options'
@@ -52,16 +54,26 @@ async function run<T>(fn: () => Promise<T>, ok?: string): Promise<boolean> {
 
 // ---- loading + polling (while videos are being built) ----
 const working = computed(
-  () => project.value?.finalVideoStatus === 'processing' || sections.value.some((s) => s.videoStatus === 'processing'),
+  () =>
+    project.value?.generationStatus === 'generating' ||
+    project.value?.finalVideoStatus === 'processing' ||
+    sections.value.some((s) => s.videoStatus === 'processing'),
 )
+
+// After an edit the backend needs a moment before it reports "processing": keep looking for a while.
+let lookUntil = 0
+function watchRender() {
+  lookUntil = Date.now() + 20000
+  poller.start()
+}
 
 const poller = usePolling(async () => {
   await projectsStore.refreshProject(id.value)
   await projectsStore.loadSections(id.value)
-  if (!working.value) poller.stop()
+  if (!working.value && Date.now() > lookUntil) poller.stop()
 }, 3000)
 
-watch(working, (w) => (w ? poller.start() : poller.stop()))
+watch(working, (w) => w && poller.start()) // the poller stops itself once nothing is running
 
 async function load() {
   loading.value = true
@@ -93,6 +105,7 @@ async function saveEdit() {
   if (await run(() => projectsStore.updateSectionText(id.value, position, editText.value.trim()), `Section ${position} saved`)) {
     editing.value = null
     await projectsStore.refreshProject(id.value).catch(() => {})
+    watchRender()
   }
 }
 async function confirmDeleteSection() {
@@ -102,7 +115,41 @@ async function confirmDeleteSection() {
 }
 async function rerender(position: number) {
   await run(() => projectsStore.rerenderSection(id.value, position))
-  poller.start()
+  watchRender()
+}
+
+// ---- request changes (AI rewrite) ----
+const changeTarget = ref<number | null>(null)
+const rewriting = ref(false)
+async function applyChange(instruction: string) {
+  const position = changeTarget.value
+  if (position === null) return
+  rewriting.value = true
+  try {
+    await projectsStore.rewriteSection(id.value, position, instruction)
+    await projectsStore.refreshProject(id.value)
+    push(`Section ${position} rewritten`, 'success')
+    changeTarget.value = null
+    watchRender()
+  } catch (e) {
+    push(errorMessage(e), 'error', 6000)
+  } finally {
+    rewriting.value = false
+  }
+}
+
+// ---- add a section at the end ----
+const adding = ref(false)
+async function addSection(text: string) {
+  if (await run(() => projectsStore.addSection(id.value, text), 'Section added')) {
+    adding.value = false
+    watchRender()
+  }
+}
+
+// ---- writing stopped half way (error, server restart): carry on where it stopped ----
+async function continueWriting() {
+  if (await run(() => projectsStore.resumeGeneration(id.value))) router.push({ name: 'progress', params: { id: id.value } })
 }
 
 // ---- final video ----
@@ -110,7 +157,7 @@ const videoStatus = computed(() => project.value?.finalVideoStatus ?? 'none')
 const pendingSections = computed(() => sections.value.filter((s) => s.videoStatus !== 'ready').length)
 
 async function buildVideo() {
-  if (await run(() => projectsStore.convertIntoVideo(id.value))) poller.start()
+  if (await run(() => projectsStore.convertIntoVideo(id.value))) watchRender()
 }
 async function removeVideo() {
   await run(() => projectsStore.deleteFinalVideo(id.value), 'Final video deleted')
@@ -132,7 +179,7 @@ const settingsChanged = computed(() => !!project.value && (voice.value !== proje
 
 async function saveSettings() {
   if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value), 'Settings saved — section videos are rebuilding')) {
-    poller.start()
+    watchRender()
   }
 }
 
@@ -152,13 +199,25 @@ async function removeProject() {
     <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
       <div class="min-w-0">
         <h1 class="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{{ project.userPrompt }}</h1>
-        <p class="mt-1 text-sm text-zinc-400">Created {{ formatDate(project.createdAt) }} · {{ sections.length }} sections · {{ totalWords }} words · {{ runtime }}</p>
+        <p class="mt-1 text-sm text-zinc-400">Created {{ formatDate(project.createdAt) }} · {{ sections.length }} {{ sections.length === 1 ? 'section' : 'sections' }} · {{ totalWords }} words · {{ runtime }}</p>
       </div>
       <div class="flex items-center gap-2">
         <StatusBadge :status="project.generationStatus" />
         <StatusBadge :status="project.finalVideoStatus" />
       </div>
     </div>
+
+    <div v-if="project.generationStatus === 'failed'" class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] px-5 py-4">
+      <p class="min-w-0 text-sm text-rose-100">
+        <span class="font-semibold">Writing stopped</span> after {{ project.sectionsCompleted }} of {{ project.totalSections || '…' }} sections<template v-if="project.generationError">: {{ project.generationError }}</template>
+      </p>
+      <button :disabled="busy" class="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500 disabled:opacity-50" @click="continueWriting">
+        <AppIcon name="refresh" :size="15" /> Continue writing
+      </button>
+    </div>
+    <RouterLink v-else-if="project.generationStatus === 'generating'" :to="{ name: 'progress', params: { id } }" class="mt-6 flex items-center gap-2 rounded-2xl border border-sky-400/20 bg-sky-500/[0.06] px-5 py-4 text-sm text-sky-100 hover:bg-sky-500/10">
+      <AppIcon name="loader" :size="15" class="animate-spin" /> The script is still being written ({{ project.sectionsCompleted }} of {{ project.totalSections || '…' }}). See progress
+    </RouterLink>
 
     <div v-if="loading" class="mt-8 space-y-4" aria-busy="true">
       <div v-for="n in 3" :key="n" class="shimmer h-32 rounded-2xl border border-white/8 bg-ink-850/70" />
@@ -173,36 +232,42 @@ async function removeProject() {
     <!-- SECTIONS -->
     <template v-if="!loading && !loadError">
     <ul v-if="tab === 'sections'" class="mt-6 space-y-4">
-      <li
-        v-for="s in sections"
-        :key="s.position"
-        class="flex flex-col gap-4 rounded-2xl border border-white/8 bg-ink-850/70 p-4 sm:flex-row sm:p-5"
-      >
-        <div class="w-full shrink-0 sm:w-44">
-          <img v-if="s.imageUrl" :src="s.imageUrl" :alt="s.imagePrompt ?? `Section ${s.position}`" class="aspect-video w-full rounded-lg object-cover ring-1 ring-white/10" loading="lazy" />
-          <SceneThumb v-else :seed="s.position * 3 + project.userPrompt.length" :label="`#${s.position}`" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center justify-between gap-3">
+      <li v-for="s in sections" :key="s.position" class="rounded-2xl border border-white/8 bg-ink-850/70 p-4 sm:p-5">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <span class="grid size-7 place-items-center rounded-lg bg-brand-500/15 text-xs font-semibold text-brand-400">{{ s.position }}</span>
             <StatusBadge :status="s.videoStatus" />
-            <span class="text-xs text-zinc-500">{{ s.wordCount }} words</span>
           </div>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-200">{{ s.text }}</p>
-          <p v-if="s.videoStatus === 'failed' && s.videoError" class="mt-2 text-xs text-rose-300">{{ s.videoError }}</p>
-          <video v-if="s.videoUrl && s.videoStatus === 'ready'" :src="s.videoUrl" controls preload="none" class="mt-3 aspect-video w-full max-w-sm rounded-lg bg-black ring-1 ring-white/10" />
-          <p v-if="s.imagePrompt" class="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-500"><AppIcon name="image" :size="13" />{{ s.imagePrompt }}</p>
-          <div class="mt-3 flex flex-wrap gap-1">
-            <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="startEdit(s.position)">
-              <AppIcon name="pencil" :size="14" /> Edit text
-            </button>
-            <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="rerender(s.position)">
-              <AppIcon name="refresh" :size="14" /> Re-render
-            </button>
-            <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:bg-rose-500/10 hover:text-rose-300" @click="sectionToDelete = s.position">
-              <AppIcon name="trash" :size="14" /> Delete
-            </button>
-          </div>
+          <span class="text-xs text-zinc-500">{{ s.wordCount }} words</span>
         </div>
+        <p class="mt-3 text-sm leading-relaxed text-zinc-200">{{ s.text }}</p>
+        <p v-if="s.videoStatus === 'failed' && s.videoError" class="mt-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{{ s.videoError }}</p>
+        <video v-if="s.videoUrl && s.videoStatus === 'ready'" :src="s.videoUrl" controls preload="none" class="mt-3 aspect-video w-full max-w-sm rounded-lg bg-black ring-1 ring-white/10" />
+
+        <div class="mt-4 border-t border-white/5 pt-4"><SectionImage :project-id="id" :section="s" @changed="watchRender" /></div>
+
+        <div class="mt-3 flex flex-wrap gap-1">
+          <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="startEdit(s.position)">
+            <AppIcon name="pencil" :size="14" /> Edit text
+          </button>
+          <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="changeTarget = s.position">
+            <AppIcon name="wand" :size="14" /> Request changes
+          </button>
+          <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="rerender(s.position)">
+            <AppIcon name="refresh" :size="14" /> {{ s.videoStatus === 'failed' ? 'Retry video' : 'Re-render' }}
+          </button>
+          <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:bg-rose-500/10 hover:text-rose-300" @click="sectionToDelete = s.position">
+            <AppIcon name="trash" :size="14" /> Delete
+          </button>
+        </div>
+      </li>
+      <li>
+        <button
+          class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 py-4 text-sm font-medium text-zinc-400 transition hover:border-brand-400/50 hover:text-white"
+          @click="adding = true"
+        >
+          <AppIcon name="plus" /> Add section
+        </button>
       </li>
     </ul>
 
@@ -315,6 +380,9 @@ async function removeProject() {
         <button :disabled="!editText.trim() || busy" class="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white enabled:hover:bg-brand-500 disabled:opacity-40" @click="saveEdit">Save</button>
       </template>
     </BaseModal>
+
+    <RewriteModal v-if="changeTarget !== null" :position="changeTarget" :busy="rewriting" @apply="applyChange" @cancel="changeTarget = null" />
+    <AddSectionModal v-if="adding" :position="sections.length + 1" :busy="busy" @add="addSection" @cancel="adding = false" />
 
     <ConfirmModal
       v-if="sectionToDelete !== null"

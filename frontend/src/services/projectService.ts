@@ -116,17 +116,30 @@ export async function listSections(id: string): Promise<Section[]> {
   return (await api.get<SectionDto[]>(`/scripts/${id}/sections`)).map(toSection)
 }
 
-export async function updateSectionText(id: string, position: number, text: string): Promise<Section> {
-  return toSection(await api.patch<SectionDto>(`/scripts/${id}/sections/${position}`, { text }))
+// While a script is still a draft the backend must not build videos for every edit: `render=false`.
+const q = (render: boolean) => (render ? '' : '?render=false')
+
+export async function updateSectionText(id: string, position: number, text: string, render = true): Promise<Section> {
+  return toSection(await api.patch<SectionDto>(`/scripts/${id}/sections/${position}${q(render)}`, { text }))
 }
 
 /** Adds a section at `position` (others move down). Omit to append. */
-export async function addSection(id: string, text: string, position?: number): Promise<Section> {
-  return toSection(await api.post<SectionDto>(`/scripts/${id}/sections`, { text, position: position ?? null }))
+export async function addSection(id: string, text: string, position?: number, render = true): Promise<Section> {
+  return toSection(await api.post<SectionDto>(`/scripts/${id}/sections${q(render)}`, { text, position: position ?? null }))
 }
 
-export async function rewriteSection(id: string, position: number, instruction: string): Promise<Section> {
-  return toSection(await api.post<SectionDto>(`/scripts/${id}/sections/${position}/rewrite`, { instruction }))
+export async function rewriteSection(id: string, position: number, instruction: string, render = true): Promise<Section> {
+  return toSection(await api.post<SectionDto>(`/scripts/${id}/sections/${position}/rewrite${q(render)}`, { instruction }))
+}
+
+export async function setSectionImage(id: string, position: number, file: File, render = true): Promise<Section> {
+  const form = new FormData()
+  form.append('file', file)
+  return toSection(await api.put<SectionDto>(`/scripts/${id}/sections/${position}/image${q(render)}`, form))
+}
+
+export async function removeSectionImage(id: string, position: number, render = true): Promise<Section> {
+  return toSection(await api.delete<SectionDto>(`/scripts/${id}/sections/${position}/image${q(render)}`))
 }
 
 export async function rerenderSection(id: string, position: number): Promise<Section> {

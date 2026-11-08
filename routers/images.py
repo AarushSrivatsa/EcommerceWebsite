@@ -18,7 +18,7 @@ MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 
 @router.put("", response_model=SectionOut)
-async def set_section_image(script_id: uuid.UUID, position: int, file: UploadFile = File(...)):
+async def set_section_image(script_id: uuid.UUID, position: int, file: UploadFile = File(...), render: bool = True):
     """Upload (or replace) the image for a section. Its video is rebuilt with the new image."""
     section = await deps.section_or_404(script_id, position)
     suffix = Path(file.filename or "").suffix.lower()
@@ -37,15 +37,15 @@ async def set_section_image(script_id: uuid.UUID, position: int, file: UploadFil
         await storage.delete_quiet(IMAGES_BUCKET, [path])
         raise HTTPException(404, f"section {position} not found")
     await storage.delete_quiet(IMAGES_BUCKET, [section.image_path])
-    await deps.section_changed(script_id, updated.id)
+    await deps.section_changed(script_id, updated.id, render)
     return await section_out(updated)
 
 
 @router.delete("", response_model=SectionOut)
-async def remove_section_image(script_id: uuid.UUID, position: int):
+async def remove_section_image(script_id: uuid.UUID, position: int, render: bool = True):
     """Remove the image (the video goes back to a plain dark card) and delete the file."""
     section = await deps.section_or_404(script_id, position)
     updated = await db.update_section_content(script_id, position, image_path=None)
     await storage.delete_quiet(IMAGES_BUCKET, [section.image_path])
-    await deps.section_changed(script_id, updated.id)
+    await deps.section_changed(script_id, updated.id, render)
     return await section_out(updated)

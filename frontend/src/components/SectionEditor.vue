@@ -3,8 +3,9 @@ import { computed, ref, watch } from 'vue'
 import { countWords } from '@/lib/format'
 import type { Section } from '@/types'
 import AppIcon from './AppIcon.vue'
+import SectionImage from './SectionImage.vue'
 
-const props = defineProps<{ section: Section; total: number; saving?: boolean }>()
+const props = defineProps<{ projectId: string; section: Section; total: number; saving?: boolean }>()
 const emit = defineEmits<{
   save: [text: string]
   'request-change': []
@@ -62,10 +63,8 @@ function commit() {
       @blur="commit"
     />
 
-    <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
-      <span v-if="section.imagePrompt" class="inline-flex min-w-0 items-center gap-1.5"><AppIcon name="image" :size="13" /><span class="truncate">{{ section.imagePrompt }}</span></span>
-      <span v-else />
-      <span>{{ words }} words</span>
-    </div>
+    <p class="mt-2 text-right text-xs text-zinc-500">{{ words }} words</p>
+
+    <div class="mt-3 border-t border-white/5 pt-4"><SectionImage :project-id="projectId" :section="section" /></div>
   </li>
 </template>

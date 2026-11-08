@@ -3,8 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AddSectionModal from '@/components/AddSectionModal.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import RewriteModal from '@/components/RewriteModal.vue'
 import SectionEditor from '@/components/SectionEditor.vue'
 import { formatDuration, speakingSeconds } from '@/lib/format'
 import { useToast } from '@/lib/toast'
@@ -73,21 +73,14 @@ async function saveText(position: number, text: string) {
 
 // ---- request changes (AI rewrite) ----
 const changeTarget = ref<number | null>(null)
-const instruction = ref('')
 const rewriting = ref(false)
-const quickInstructions = ['Make it funnier', 'Make it shorter', 'More dramatic', 'Simpler language']
 
-function openChange(position: number) {
-  changeTarget.value = position
-  instruction.value = ''
-}
-
-async function applyChange() {
+async function applyChange(instruction: string) {
   const position = changeTarget.value
-  if (position === null || !instruction.value.trim()) return
+  if (position === null) return
   rewriting.value = true
   try {
-    await projectsStore.rewriteSection(id.value, position, instruction.value.trim())
+    await projectsStore.rewriteSection(id.value, position, instruction)
     push(`Section ${position} rewritten`, 'success')
     changeTarget.value = null
   } catch (e) {
@@ -157,11 +150,12 @@ async function approve() {
         <SectionEditor
           v-for="s in sections"
           :key="s.position"
+          :project-id="id"
           :section="s"
           :total="sections.length"
           :saving="savingPosition === s.position"
           @save="saveText(s.position, $event)"
-          @request-change="openChange(s.position)"
+          @request-change="changeTarget = s.position"
           @insert-below="addAt = s.position + 1"
           @remove="sectionToDelete = s.position"
         />
@@ -176,7 +170,7 @@ async function approve() {
     </template>
 
     <!-- Sticky action bar -->
-    <div class="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-ink-900/90 backdrop-blur lg:left-64">
+    <div class="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-ink-900/90 backdrop-blur">
       <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-10">
         <button class="rounded-xl px-3.5 py-2 text-sm font-medium text-zinc-400 transition hover:bg-rose-500/10 hover:text-rose-300" :disabled="busy" @click="discarding = true">
           Discard draft
@@ -192,43 +186,7 @@ async function approve() {
       </div>
     </div>
 
-    <!-- Request changes -->
-    <BaseModal
-      v-if="changeTarget !== null"
-      :title="`Request changes · Section ${changeTarget}`"
-      description="Tell the writer what to change in this section."
-      @close="!rewriting && (changeTarget = null)"
-    >
-      <textarea
-        v-model="instruction"
-        rows="3"
-        :disabled="rewriting"
-        placeholder="e.g. Make it funnier"
-        class="w-full resize-none rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white placeholder:text-zinc-500 focus:border-brand-400/60 focus:outline-none disabled:opacity-60"
-      />
-      <div class="mt-3 flex flex-wrap gap-2">
-        <button
-          v-for="q in quickInstructions"
-          :key="q"
-          :disabled="rewriting"
-          class="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-300 hover:border-brand-400/40 hover:text-white"
-          @click="instruction = q"
-        >
-          {{ q }}
-        </button>
-      </div>
-      <template #footer>
-        <button class="rounded-lg px-3.5 py-2 text-sm font-medium text-zinc-300 hover:bg-white/5" :disabled="rewriting" @click="changeTarget = null">Cancel</button>
-        <button
-          :disabled="!instruction.trim() || rewriting"
-          class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white transition enabled:hover:bg-brand-500 disabled:opacity-40"
-          @click="applyChange"
-        >
-          <AppIcon v-if="rewriting" name="loader" :size="14" class="animate-spin" />
-          {{ rewriting ? 'Rewriting…' : 'Apply changes' }}
-        </button>
-      </template>
-    </BaseModal>
+    <RewriteModal v-if="changeTarget !== null" :position="changeTarget" :busy="rewriting" @apply="applyChange" @cancel="changeTarget = null" />
 
     <AddSectionModal v-if="addAt !== null" :position="addAt" :busy="busy" @add="addSection" @cancel="addAt = null" />
 

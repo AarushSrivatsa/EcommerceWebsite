@@ -51,10 +51,12 @@ async def delete_files(files: dict[str, list[str]]) -> None:
         await storage.delete_quiet(bucket, paths)
 
 
-async def section_changed(script_id: uuid.UUID, section_id: uuid.UUID) -> None:
-    """The final video is out of date and this section's video has to be rebuilt."""
+async def section_changed(script_id: uuid.UUID, section_id: uuid.UUID, render: bool = True) -> None:
+    """The final video is out of date and this section's video has to be rebuilt.
+    render=False only marks it (the website uses that while you are still reviewing a draft: nothing is built until you approve)."""
     await db.mark_final_outdated(script_id)
-    spawn(video_service.render_section_video(section_id))
+    if render:
+        spawn(video_service.render_section_video(section_id))
 
 
 # ── LangGraph ─────────────────────────────────────────────────────────────────

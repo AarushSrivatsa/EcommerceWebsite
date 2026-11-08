@@ -55,7 +55,7 @@ class SectionCreate(BaseModel):
 
 
 @router.post("", response_model=SectionOut, status_code=201)
-async def add_section(script_id: uuid.UUID, body: SectionCreate):
+async def add_section(script_id: uuid.UUID, body: SectionCreate, render: bool = True):
     """Add a section you wrote yourself (at the end, or at `position`, pushing the others down)."""
     from nodes import embed, suggest_image_prompt
     state = await deps.script_or_404(script_id)
@@ -68,7 +68,7 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
     embedding, image_prompt = await asyncio.gather(embed(text), suggest_image_prompt(text))
     section = await db.insert_section(script_id, position, text=text, word_count=len(text.split()),
                                       embedding=embedding, image_prompt=image_prompt)
-    await deps.section_changed(script_id, section.id)
+    await deps.section_changed(script_id, section.id, render)
     return await section_out(section)
 
 
@@ -77,7 +77,7 @@ class SectionUpdate(BaseModel):
 
 
 @router.patch("/{position}", response_model=SectionOut)
-async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate):
+async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate, render: bool = True):
     """Write the section text yourself. Its video is rebuilt."""
     from nodes import embed, suggest_image_prompt
     await deps.section_or_404(script_id, position)
@@ -87,7 +87,7 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
                                               embedding=embedding, image_prompt=image_prompt)
     if section is None:
         raise HTTPException(404, f"section {position} not found")
-    await deps.section_changed(script_id, section.id)
+    await deps.section_changed(script_id, section.id, render)
     return await section_out(section)
 
 
@@ -96,7 +96,7 @@ class RewriteIn(BaseModel):
 
 
 @router.post("/{position}/rewrite", response_model=SectionOut)
-async def rewrite_section(script_id: uuid.UUID, position: int, body: RewriteIn):
+async def rewrite_section(script_id: uuid.UUID, position: int, body: RewriteIn, render: bool = True):
     """Have the LangGraph rewrite this one section from an instruction. Its video is rebuilt."""
     state = await deps.script_or_404(script_id)
     await deps.section_or_404(script_id, position)
@@ -116,7 +116,7 @@ async def rewrite_section(script_id: uuid.UUID, position: int, body: RewriteIn):
         raise HTTPException(502, f"rewrite failed: {type(exc).__name__}: {exc}")
     await db.set_state_fields(script_id, generation_status="ready")
     section = await deps.section_or_404(script_id, position)
-    await deps.section_changed(script_id, section.id)
+    await deps.section_changed(script_id, section.id, render)
     return await section_out(section)
 
 

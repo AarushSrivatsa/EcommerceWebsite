@@ -24,8 +24,9 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      // a FormData (file upload) sets its own Content-Type
+      headers: body === undefined || body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, 'Can’t reach the backend. Is it running?')
@@ -49,6 +50,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
+  put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   delete: <T = void>(path: string) => request<T>('DELETE', path),
 }
