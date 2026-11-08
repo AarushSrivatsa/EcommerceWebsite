@@ -97,8 +97,10 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                     IMAGES_BUCKET, section.image_path, folder / f"image{Path(section.image_path).suffix}")
 
             async with memory.heavy:                              # the voice model never shares RAM with the embedder
+                memory.report(f"render start (section {section.position})")
                 audio, video = await asyncio.to_thread(
                     _make_section_files, section.text, state.words_per_minute, state.voice_model, image, folder)
+                memory.report(f"render done (section {section.position})")
 
             audio_path = f"{state.id}/{section.id}-{rev}.mp3"     # the revision in the name: a new render never
             video_path = f"{state.id}/{section.id}-{rev}.mp4"     # overwrites the file the old one points to

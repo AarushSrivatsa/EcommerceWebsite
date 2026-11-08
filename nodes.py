@@ -84,7 +84,9 @@ def _embed_sync(text: str) -> list[float]:
     from fastembed import TextEmbedding                           # ONNX, no PyTorch
     embedder = TextEmbedding(EMBEDDING_MODEL)
     try:
-        return next(iter(embedder.embed([text]))).tolist()
+        vector = next(iter(embedder.embed([text]))).tolist()
+        memory.report("embedder loaded")
+        return vector
     finally:
         del embedder                                              # not kept: the voice model needs that RAM
         memory.free()

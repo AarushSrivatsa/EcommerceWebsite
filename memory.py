@@ -10,6 +10,20 @@ import gc
 heavy = asyncio.Lock()
 
 
+def rss_mb() -> int:
+    """How much RAM this process uses right now (0 where /proc does not exist)."""
+    try:
+        with open("/proc/self/status") as status:
+            return int(next(line for line in status if line.startswith("VmRSS:")).split()[1]) // 1024
+    except (OSError, StopIteration, ValueError):
+        return 0
+
+
+def report(where: str) -> None:
+    """One line in the Render logs: where the RAM stands (search the logs for 'memory:')."""
+    print(f"memory: {rss_mb()} MB at {where}", flush=True)
+
+
 def free() -> None:
     """Gives memory that Python no longer uses back to the operating system."""
     gc.collect()

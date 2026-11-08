@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 
 import database as db
 import deps
+import memory
 from edges import build_graph
 from routers import final_video, images, scripts, sections
 
@@ -43,7 +44,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.get("/health", include_in_schema=False)
 async def health():
     """For Render's health check."""
-    return {"status": "ok"}
+    return {"status": "ok", "ram_mb": memory.rss_mb()}
 
 
 app.include_router(scripts.router)

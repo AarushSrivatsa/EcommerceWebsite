@@ -6,6 +6,7 @@ import uuid
 from fastapi import HTTPException
 
 import database as db
+import memory
 import storage
 import video_service
 from BaseState import BaseState
@@ -71,6 +72,7 @@ async def run_graph(base: BaseState) -> None:
 
 async def generation_job(base: BaseState, auto_render: bool) -> None:
     """Writes all sections (the caller has already claimed generation_status='generating')."""
+    memory.report(f"generation start ({base.id})")
     try:
         await run_graph(base)
     except Exception as exc:
