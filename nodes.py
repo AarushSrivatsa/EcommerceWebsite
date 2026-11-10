@@ -16,7 +16,7 @@ MAX_REWRITES = 3                      # after this many failed attempts the sect
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold
 FALLBACK_SIMILARITY_THRESHOLD = 0.88
 WRITER_ATTEMPTS = 3                   # tries when the writer LLM comes back empty
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"   # 768 dimensions, matches Vector(768) in database.py
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"   # 384 dimensions (about 1/3 of the RAM of bge-base), matches EMBEDDING_DIM in database.py
 
 brief_schema = {
     "type": "object",

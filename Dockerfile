@@ -28,7 +28,7 @@ ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1
 ENV KOKORO_MODEL_PATH=/models/kokoro.onnx \
     KOKORO_VOICES_PATH=/models/voices.bin \
     FASTEMBED_CACHE_PATH=/models/fastembed
-RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-base-en-v1.5')"
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
 
 COPY . .
 COPY --from=site /site/dist frontend/dist

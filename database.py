@@ -88,6 +88,9 @@ class State(Base):
     final_video_error: Mapped[str | None] = mapped_column(Text)
 
 
+EMBEDDING_DIM = 384      # bge-small-en-v1.5; a pgvector column has a fixed length, so this must match nodes.EMBEDDING_MODEL
+
+
 class Section(Base):
     __tablename__ = "sections"
     __table_args__ = (UniqueConstraint("state_id", "position"),)
@@ -96,7 +99,7 @@ class Section(Base):
     position: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     word_count: Mapped[int] = mapped_column(Integer)
-    embedding = mapped_column(Vector(768))
+    embedding = mapped_column(Vector(EMBEDDING_DIM))
     image_prompt: Mapped[str | None] = mapped_column(Text)    # suggested visual, written by the LLM
 
     # storage paths (inside the images / audios / videos buckets)
@@ -384,6 +387,15 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         for statement in MIGRATIONS:
             await conn.execute(text(statement))
+
+        # An older database has vector(768) from the bigger embedder. pgvector keeps the length in atttypmod.
+        # The old vectors cannot be cast to the new length, so they are cleared (they only help to spot repeated
+        # text while a script is being written; new sections get new ones).
+        length = await conn.scalar(text(
+            "SELECT atttypmod FROM pg_attribute WHERE attrelid = 'sections'::regclass AND attname = 'embedding'"))
+        if length != EMBEDDING_DIM:
+            await conn.execute(text("UPDATE sections SET embedding = NULL"))
+            await conn.execute(text(f"ALTER TABLE sections ALTER COLUMN embedding TYPE vector({EMBEDDING_DIM})"))
 
 
 if __name__ == "__main__":
