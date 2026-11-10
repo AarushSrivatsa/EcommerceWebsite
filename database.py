@@ -234,6 +234,7 @@ async def delete_state(state_id: uuid.UUID) -> dict[str, list[str]] | None:
 async def reset_interrupted_jobs() -> None:
     """Jobs that were running when the server stopped will never finish: unstick them."""
     async with SessionLocal() as session:
+        await session.execute(text("SET LOCAL lock_timeout = '15s'"))
         await session.execute(sql_update(State).where(State.generation_status == "generating")
                               .values(generation_status="failed", generation_error="interrupted by a server restart"))
         await session.execute(sql_update(State).where(State.final_video_status == "processing")
@@ -383,6 +384,9 @@ MIGRATIONS = [   # create_all does not add columns to existing tables
 
 async def init_db():
     async with engine.begin() as conn:
+        # ALTER TABLE waits for every other session that touched the table. A session left open by a killed server
+        # would make the start-up hang for ever (and Render would time the deploy out): fail with a clear error instead.
+        await conn.execute(text("SET LOCAL lock_timeout = '15s'"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
         for statement in MIGRATIONS:

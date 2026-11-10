@@ -30,9 +30,11 @@ from routers import final_video, images, scripts, sections
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("startup: preparing the database", flush=True)
     await db.init_db()
     await db.reset_interrupted_jobs()
     deps.graph = build_graph()
+    print(f"startup: ready ({memory.rss_mb()} MB)", flush=True)
     yield
 
 
