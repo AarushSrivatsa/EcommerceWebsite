@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field
 import database as db
 import deps
 import storage
-import video_service
 from BaseState import BaseState
 from config import VIDEOS_BUCKET
 
@@ -67,7 +66,6 @@ class ScriptCreate(BaseModel):
     voice_model: str = "af_heart"
     video_type: Literal["facts", "story"] | None = None
     similarity_threshold: float | None = Field(default=None, gt=0, le=1)
-    auto_render: bool = True              # build each section's video as soon as the script is written
 
 
 @router.post("", response_model=ScriptOut, status_code=202)
@@ -79,7 +77,7 @@ async def create_script(body: ScriptCreate):
         video_type=body.video_type, similarity_threshold=body.similarity_threshold, sections_completed=0)
     await db.save_state(base, {})
     await db.set_state_fields(base.id, generation_status="generating", generation_error=None)
-    deps.spawn(deps.generation_job(base, body.auto_render))
+    deps.spawn(deps.generation_job(base))
     return await script_out(await deps.script_or_404(base.id))
 
 
@@ -100,7 +98,7 @@ class ScriptUpdate(BaseModel):
 
 @router.patch("/{script_id}", response_model=ScriptOut)
 async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
-    """Changing the voice or speaking speed rebuilds every section video."""
+    """Changing the voice or speaking speed makes every section video out of date (build them again when you are ready)."""
     state = await deps.script_or_404(script_id)
     changes = body.model_dump(exclude_none=True)
     changes = {k: v for k, v in changes.items() if getattr(state, k) != v}
@@ -108,17 +106,16 @@ async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
         await db.set_state_fields(script_id, **changes)
         await db.mark_all_sections_changed(script_id)
         await db.mark_final_outdated(script_id)
-        deps.spawn(video_service.render_all_pending(script_id))
     return await script_out(await deps.script_or_404(script_id))
 
 
 @router.post("/{script_id}/generate", response_model=ScriptOut, status_code=202)
-async def resume_generation(script_id: uuid.UUID, auto_render: bool = True):
+async def resume_generation(script_id: uuid.UUID):
     """Continue writing a script whose generation failed or was interrupted."""
     state = await deps.script_or_404(script_id)
     if not await db.claim_generation(script_id):
         raise HTTPException(409, "the script is already being generated")
-    deps.spawn(deps.generation_job(deps.state_from_row(state), auto_render))
+    deps.spawn(deps.generation_job(deps.state_from_row(state)))
     return await script_out(await deps.script_or_404(script_id))
 
 

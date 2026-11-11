@@ -2,7 +2,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -39,6 +41,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Script to video", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def log_bad_request(request: Request, exc: RequestValidationError):
+    """FastAPI's 422, with what was wrong written to the log (Render shows only "422 Unprocessable Entity")."""
+    print(f"422: {request.method} {request.url.path}?{request.url.query} -> {exc.errors()}", flush=True)
+    return await request_validation_exception_handler(request, exc)
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # tighten for production
 
 

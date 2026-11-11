@@ -15,5 +15,4 @@ Vue 3 + TypeScript + Vite + Tailwind. Talks to the FastAPI backend in the repo r
 Everything backend-specific is in `src/services/projectService.ts` (endpoints + snake_case mapping) and `src/services/api.ts` (fetch wrapper).
 
 ## Notes
-- "Draft" (story written, awaiting approval) is a frontend-only state kept in this browser's localStorage. Approving calls `POST /convert_into_video/{id}`.
-- Scripts are created with `auto_render: false`, so no video is built until you approve.
+- Nothing is rendered automatically. After the script is written you edit it, add images, then press **Build section videos** (`POST /scripts/{id}/render_sections`) to see each section's video, and **Generate final video** (`POST /convert_into_video/{id}`) to join them. Each section also has its own Build / Rebuild button.

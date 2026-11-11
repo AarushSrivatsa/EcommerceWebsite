@@ -7,7 +7,6 @@ const props = defineProps<{ status: string }>()
 
 const map: Record<string, { label: string; tone: Tone; pulse?: boolean }> = {
   // project generation
-  draft: { label: 'Draft', tone: 'neutral' },
   generating: { label: 'Generating', tone: 'info', pulse: true },
   ready: { label: 'Ready', tone: 'success' },
   failed: { label: 'Failed', tone: 'danger' },
@@ -16,7 +15,7 @@ const map: Record<string, { label: string; tone: Tone; pulse?: boolean }> = {
   processing: { label: 'Processing', tone: 'info', pulse: true },
   outdated: { label: 'Outdated', tone: 'warning' },
   // section video
-  pending: { label: 'Pending', tone: 'neutral' },
+  pending: { label: 'Not built', tone: 'neutral' },
 }
 
 const tones: Record<Tone, string> = {

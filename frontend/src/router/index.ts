@@ -10,8 +10,7 @@ const router = createRouter({
     { path: '/', name: 'projects', component: () => import('@/views/ProjectsView.vue'), meta: { title: 'Projects' } },
     { path: '/new', name: 'new', component: () => import('@/views/NewProjectView.vue'), meta: { title: 'New project' } },
     { path: '/projects/:id', name: 'project', component: () => import('@/views/ProjectDetailView.vue'), meta: { title: 'Project' } },
-    { path: '/projects/:id/review', name: 'review', component: () => import('@/views/StoryReviewView.vue'), meta: { title: 'Review story' } },
-    { path: '/projects/:id/progress', name: 'progress', component: () => import('@/views/GenerationProgressView.vue'), meta: { title: 'Generation progress' } },
+    { path: '/projects/:id/:old(review|progress)', redirect: (to) => `/projects/${String(to.params.id)}` },   // old links
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

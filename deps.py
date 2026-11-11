@@ -8,12 +8,12 @@ from fastapi import HTTPException
 import database as db
 import memory
 import storage
-import video_service
 from BaseState import BaseState
 
 log = logging.getLogger("api")
 
 RECURSION_LIMIT = 2000
+GENERATION_TIMEOUT = 45 * 60       # seconds; a job that takes longer is marked failed, and "Continue writing" picks it up
 graph = None                       # set once at startup by main.py (deps.graph = build_graph())
 
 _tasks: set[asyncio.Task] = set()
@@ -52,14 +52,6 @@ async def delete_files(files: dict[str, list[str]]) -> None:
         await storage.delete_quiet(bucket, paths)
 
 
-async def section_changed(script_id: uuid.UUID, section_id: uuid.UUID, render: bool = True) -> None:
-    """The final video is out of date and this section's video has to be rebuilt.
-    render=False only marks it (the website uses that while you are still reviewing a draft: nothing is built until you approve)."""
-    await db.mark_final_outdated(script_id)
-    if render:
-        spawn(video_service.render_section_video(section_id))
-
-
 # ── LangGraph ─────────────────────────────────────────────────────────────────
 def state_from_row(row: db.State, **update) -> BaseState:
     values = {name: getattr(row, name) for name in BaseState.model_fields if getattr(row, name) is not None}
@@ -70,15 +62,13 @@ async def run_graph(base: BaseState) -> None:
     await graph.ainvoke(base, {"recursion_limit": RECURSION_LIMIT})
 
 
-async def generation_job(base: BaseState, auto_render: bool) -> None:
+async def generation_job(base: BaseState) -> None:
     """Writes all sections (the caller has already claimed generation_status='generating')."""
     memory.report(f"generation start ({base.id})")
     try:
-        await run_graph(base)
+        await asyncio.wait_for(run_graph(base), GENERATION_TIMEOUT)
     except Exception as exc:
         log.exception("generation failed for %s", base.id)
-        await db.set_state_fields(base.id, generation_status="failed", generation_error=f"{type(exc).__name__}: {exc}"[:500])
+        await db.set_state_fields(base.id, generation_status="failed", generation_error=(f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__)[:500])
         return
     await db.set_state_fields(base.id, generation_status="ready")
-    if auto_render:
-        await video_service.render_all_pending(base.id)

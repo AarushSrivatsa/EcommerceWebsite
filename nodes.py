@@ -15,7 +15,6 @@ from database import SessionLocal, Section, save_state, load_section
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold
 FALLBACK_SIMILARITY_THRESHOLD = 0.88
-WRITER_ATTEMPTS = 3                   # tries when the writer LLM comes back empty
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"   # 384 dimensions (about 1/3 of the RAM of bge-base), matches EMBEDDING_DIM in database.py
 
 brief_schema = {
@@ -31,7 +30,7 @@ brief_schema = {
 
 # gpt-oss "thinks" before answering; with the default budget the thinking can eat all the tokens and Groq then
 # returns an empty generation (json_validate_failed). So: low reasoning effort and a roomy token limit.
-_BRIEF_KWARGS = dict(model="openai/gpt-oss-120b", temperature=0.4, max_tokens=4096, reasoning_effort="low")
+_BRIEF_KWARGS = dict(model="openai/gpt-oss-120b", temperature=0.4, max_tokens=4096, reasoning_effort="low", timeout=90)
 brief_llm = ChatGroq(**_BRIEF_KWARGS).bind(
     response_format={
         "type": "json_schema",
@@ -39,9 +38,9 @@ brief_llm = ChatGroq(**_BRIEF_KWARGS).bind(
     }
 )
 brief_fallback_llm = ChatGroq(**_BRIEF_KWARGS)      # no schema mode: asked for JSON in plain words instead
-summary_llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0.2)    # also writes the image suggestions
+summary_llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0.2, timeout=60)    # also writes the image suggestions
 # same reasoning limit as the brief LLM, so the thinking cannot use up all the tokens and leave an empty reply
-writer_llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.8, max_tokens=8192, reasoning_effort="low")
+writer_llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.8, max_tokens=8192, reasoning_effort="low", timeout=120)
 
 BRIEF_SYSTEM = """You are the manager of a YouTube video script generator. A separate writer LLM writes the script one section at a time, and it remembers nothing between sections. You never write a section yourself. You write the brief the writer works from.
 
@@ -73,6 +72,26 @@ IMAGE_PROMPT_SYSTEM = """You get one section of a video script. Describe the sin
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+LLM_ATTEMPTS = 3
+
+
+async def ask(llm, messages) -> str:
+    """The reply text of an LLM call, tried a few times (rate limits, 5xx and the odd 422 from Groq pass).
+    Raises the last error if every attempt fails. An empty reply counts as a failure."""
+    last_error: Exception = RuntimeError("the LLM returned nothing")
+    for attempt in range(LLM_ATTEMPTS):
+        try:
+            text = (await llm.ainvoke(messages)).content.strip()
+            if text:
+                return text
+            last_error = RuntimeError("the LLM returned an empty reply")
+        except Exception as exc:
+            last_error = exc
+            print(f"llm: attempt {attempt + 1}/{LLM_ATTEMPTS} failed: {type(exc).__name__}: {exc}", flush=True)
+        await asyncio.sleep(2 * (attempt + 1))
+    raise last_error
+
+
 def similarity_limit(state: BaseState) -> float:
     if state.similarity_threshold is not None:
         return state.similarity_threshold
@@ -99,8 +118,7 @@ async def embed(text: str) -> list[float]:
 async def suggest_image_prompt(text: str) -> str | None:
     """One-line description of the image that fits a section. Never raises: it is only a suggestion."""
     try:
-        reply = await summary_llm.ainvoke([("system", IMAGE_PROMPT_SYSTEM), ("user", text)])
-        return reply.content.strip() or None
+        return await ask(summary_llm, [("system", IMAGE_PROMPT_SYSTEM), ("user", text)])
     except Exception:
         return None
 
@@ -175,18 +193,21 @@ async def router_node(state: BaseState) -> dict:
 
         # ── 2. it passed (or we are out of retries): update progress, send to push ──
         if not problems or state.rewrite_attempts >= MAX_REWRITES:
-            reply = await summary_llm.ainvoke([
-                ("system", SUMMARY_SYSTEM),
-                ("user",
-                 f"Summary so far:\n{state.progress_context or '(nothing yet)'}\n\n"
-                 f"Newly saved section: {state.generated_response_title or 'untitled'}\n"
-                 f"{state.generator_response}"),
-            ])
+            try:
+                summary = await ask(summary_llm, [
+                    ("system", SUMMARY_SYSTEM),
+                    ("user",
+                     f"Summary so far:\n{state.progress_context or '(nothing yet)'}\n\n"
+                     f"Newly saved section: {state.generated_response_title or 'untitled'}\n"
+                     f"{state.generator_response}"),
+                ])
+            except Exception:             # only a convenience for the next brief: never lose a good section over it
+                summary = (state.progress_context or "") + f"\n{state.generated_response_title or 'Section'}: saved"
             is_rewrite = state.current_section in changes          # a user rewrite replaces a saved section
             update = {
                 "next_step": "push",
                 "current_node": "router",
-                "progress_context": reply.content.strip(),
+                "progress_context": summary.strip(),
                 "sections_completed": saved if is_rewrite else saved + 1,
                 "user_prompted_sectional_changes": {n: c for n, c in changes.items() if n != state.current_section},
                 "rewrite_attempts": 0,
@@ -270,14 +291,7 @@ async def writer_node(state: BaseState) -> dict:
     title_line, _, brief = state.router_prompt.partition("\n")      # "Title: Fact 04" + the brief
     title = title_line.removeprefix("Title:").strip()
 
-    text = ""
-    for _ in range(WRITER_ATTEMPTS):
-        reply = await writer_llm.ainvoke([("system", WRITER_SYSTEM), ("user", brief)])
-        text = reply.content.strip()
-        if text:
-            break
-    if not text:
-        raise RuntimeError("the writer LLM returned an empty section")
+    text = await ask(writer_llm, [("system", WRITER_SYSTEM), ("user", brief)])
 
     embedding = await embed(text)
     distance = Section.embedding.cosine_distance(embedding)

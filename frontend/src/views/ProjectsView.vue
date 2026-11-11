@@ -14,7 +14,7 @@ import type { Project } from '@/types'
 const router = useRouter()
 const { push } = useToast()
 
-type Filter = 'all' | 'draft' | 'generating' | 'ready' | 'failed'
+type Filter = 'all' | 'generating' | 'ready' | 'failed'
 const filter = ref<Filter>('all')
 const query = ref('')
 const toDelete = ref<Project | null>(null)
@@ -45,7 +45,6 @@ onMounted(async () => {
 
 const filters: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'draft', label: 'Drafts' },
   { value: 'generating', label: 'Generating' },
   { value: 'ready', label: 'Ready' },
   { value: 'failed', label: 'Failed' },
@@ -60,10 +59,7 @@ const visible = computed(() =>
 )
 
 function open(p: Project) {
-  if (p.generationStatus === 'draft') router.push({ name: 'review', params: { id: p.id } })
-  else if (p.generationStatus === 'generating' || p.generationStatus === 'failed' || p.finalVideoStatus === 'processing')
-    router.push({ name: 'progress', params: { id: p.id } })
-  else router.push({ name: 'project', params: { id: p.id } })
+  router.push({ name: 'project', params: { id: p.id } })
 }
 
 async function confirmDelete() {
@@ -129,7 +125,7 @@ async function confirmDelete() {
       <div class="mx-auto grid size-12 place-items-center rounded-xl bg-white/5 text-zinc-400"><AppIcon name="film" :size="22" /></div>
       <h2 class="mt-4 text-base font-semibold text-white">{{ projectsStore.projects.value.length ? 'No projects match' : 'No projects yet' }}</h2>
       <p class="mx-auto mt-1 max-w-sm text-sm text-zinc-400">
-        {{ projectsStore.projects.value.length ? 'Try a different filter or search term.' : 'Describe an idea and we’ll draft a story for you to review.' }}
+        {{ projectsStore.projects.value.length ? 'Try a different filter or search term.' : 'Describe an idea and we’ll write the story for you.' }}
       </p>
       <RouterLink to="/new" class="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500">
         <AppIcon name="plus" /> New project

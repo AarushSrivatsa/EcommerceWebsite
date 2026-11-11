@@ -13,39 +13,10 @@ interface State {
 
 const state = reactive<State>({ loaded: false, projects: [], sections: {} })
 
-// ---- "draft" = script written by the backend, not yet approved for rendering. ----
-// The backend has no such state, so the ids are remembered in this browser only.
-const DRAFTS_KEY = 'stv:drafts'
-
-function readDrafts(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '[]') as string[])
-  } catch {
-    return new Set()
-  }
-}
-function writeDrafts(ids: Set<string>) {
-  try {
-    localStorage.setItem(DRAFTS_KEY, JSON.stringify([...ids]))
-  } catch {
-    /* storage unavailable: drafts just behave like normal projects */
-  }
-}
-
-/** Applies the frontend-only `draft` status to a project the backend reports as ready. */
-function withDraftFlag(p: Project, drafts: Set<string>): Project {
-  return drafts.has(p.id) && p.generationStatus === 'ready' ? { ...p, generationStatus: 'draft' } : p
-}
-
-export function isDraftId(id: string): boolean {
-  return readDrafts().has(id)
-}
-
 function upsert(p: Project) {
-  const next = withDraftFlag(p, readDrafts())
   const i = state.projects.findIndex((x) => x.id === p.id)
-  if (i === -1) state.projects.push(next)
-  else state.projects[i] = next
+  if (i === -1) state.projects.push(p)
+  else state.projects[i] = p
 }
 
 function setSection(id: string, section: Section) {
@@ -66,11 +37,7 @@ export const projectsStore = {
 
   // ---- loading ----
   async loadProjects() {
-    const drafts = readDrafts()
-    const list = await service.listProjects()
-    // forget draft ids whose project no longer exists
-    writeDrafts(new Set([...drafts].filter((id) => list.some((p) => p.id === id))))
-    state.projects = list.map((p) => withDraftFlag(p, drafts))
+    state.projects = await service.listProjects()
     state.loaded = true
   },
 
@@ -97,9 +64,6 @@ export const projectsStore = {
   // ---- projects ----
   async createProject(form: Parameters<typeof service.createProject>[0]): Promise<Project> {
     const project = await service.createProject(form)
-    const drafts = readDrafts()
-    drafts.add(project.id)
-    writeDrafts(drafts)
     state.sections[project.id] = []
     upsert(project)
     return project
@@ -113,8 +77,6 @@ export const projectsStore = {
     await service.deleteProject(id)
     state.projects = state.projects.filter((p) => p.id !== id)
     delete state.sections[id]
-    const drafts = readDrafts()
-    if (drafts.delete(id)) writeDrafts(drafts)
   },
 
   async updateSettings(id: string, voiceModel: string, wordsPerMinute: number) {
@@ -123,27 +85,27 @@ export const projectsStore = {
   },
 
   // ---- sections ----
-  // Edits to a draft never build videos (that happens on approval); edits to an approved project rebuild the section.
+  // Editing a section only marks its video out of date; videos are built by the buttons (buildSectionVideos / convertIntoVideo).
   async updateSectionText(id: string, position: number, text: string) {
-    setSection(id, await service.updateSectionText(id, position, text, !isDraftId(id)))
+    setSection(id, await service.updateSectionText(id, position, text))
   },
 
   async rewriteSection(id: string, position: number, instruction: string) {
-    setSection(id, await service.rewriteSection(id, position, instruction, !isDraftId(id)))
+    setSection(id, await service.rewriteSection(id, position, instruction))
   },
 
   async setSectionImage(id: string, position: number, file: File) {
-    setSection(id, await service.setSectionImage(id, position, file, !isDraftId(id)))
+    setSection(id, await service.setSectionImage(id, position, file))
     await this.refreshProject(id)
   },
 
   async removeSectionImage(id: string, position: number) {
-    setSection(id, await service.removeSectionImage(id, position, !isDraftId(id)))
+    setSection(id, await service.removeSectionImage(id, position))
     await this.refreshProject(id)
   },
 
   async addSection(id: string, text: string, position?: number) {
-    await service.addSection(id, text, position, !isDraftId(id))
+    await service.addSection(id, text, position)
     await this.loadSections(id) // positions of later sections shifted
     await this.refreshProject(id)
   },
@@ -158,13 +120,9 @@ export const projectsStore = {
     setSection(id, await service.rerenderSection(id, position))
   },
 
-  // ---- workflow ----
-  /** Approve the script: builds every section video, then stitches the final video. */
-  async approveDraft(id: string) {
-    upsert(await service.convertIntoVideo(id))
-    const drafts = readDrafts()
-    if (drafts.delete(id)) writeDrafts(drafts)
-    await this.refreshProject(id)
+  // ---- videos ----
+  async buildSectionVideos(id: string) {
+    upsert(await service.buildSectionVideos(id))
   },
 
   async convertIntoVideo(id: string) {

@@ -122,11 +122,21 @@ async def render_section_video(section_id: uuid.UUID) -> None:
             shutil.rmtree(folder, ignore_errors=True)
 
 
+_batches: set[uuid.UUID] = set()
+
+
 async def render_all_pending(script_id: uuid.UUID) -> None:
-    """Renders every section whose video is not up to date, one after another."""
-    for section in await db.load_sections(script_id):
-        if section.video_status != "ready":
-            await render_section_video(section.id)
+    """Renders every section whose video is not up to date, one after another.
+    A second call for the same script while one is running does nothing (the first one covers it)."""
+    if script_id in _batches:
+        return
+    _batches.add(script_id)
+    try:
+        for section in await db.load_sections(script_id):
+            if section.video_status != "ready":
+                await render_section_video(section.id)
+    finally:
+        _batches.discard(script_id)
 
 
 # ── the final video ───────────────────────────────────────────────────────────

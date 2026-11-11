@@ -39,7 +39,7 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
       <span class="inline-flex items-center gap-1.5"><AppIcon name="layers" :size="14" />{{ project.totalSections }} sections</span>
     </div>
 
-    <div v-if="project.generationStatus !== 'draft'">
+    <div>
       <div class="mb-1.5 flex justify-between text-xs text-zinc-500">
         <span>{{ project.sectionsCompleted }} / {{ project.totalSections }} sections</span>
         <span>{{ percent }}%</span>
@@ -52,7 +52,6 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
         />
       </div>
     </div>
-    <p v-else class="text-xs text-zinc-500">Story written — waiting for your approval.</p>
 
     <div class="mt-auto flex items-center justify-between border-t border-white/5 pt-3 text-xs text-zinc-500">
       <span>Updated {{ formatDate(project.updatedAt) }}</span>

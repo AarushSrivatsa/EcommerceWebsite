@@ -149,15 +149,24 @@ async function addSection(text: string) {
 
 // ---- writing stopped half way (error, server restart): carry on where it stopped ----
 async function continueWriting() {
-  if (await run(() => projectsStore.resumeGeneration(id.value))) router.push({ name: 'progress', params: { id: id.value } })
+  if (await run(() => projectsStore.resumeGeneration(id.value))) watchRender()
 }
 
-// ---- final video ----
+// ---- videos: nothing is built until you press a button ----
+const writing = computed(() => project.value?.generationStatus === 'generating')
 const videoStatus = computed(() => project.value?.finalVideoStatus ?? 'none')
 const pendingSections = computed(() => sections.value.filter((s) => s.videoStatus !== 'ready').length)
+const rendering = computed(() => sections.value.some((s) => s.videoStatus === 'processing'))
+const canBuild = computed(() => !busy.value && !writing.value && sections.value.length > 0 && videoStatus.value !== 'processing')
 
+async function buildSections() {
+  if (await run(() => projectsStore.buildSectionVideos(id.value))) watchRender()
+}
 async function buildVideo() {
-  if (await run(() => projectsStore.convertIntoVideo(id.value))) watchRender()
+  if (await run(() => projectsStore.convertIntoVideo(id.value))) {
+    tab.value = 'video'
+    watchRender()
+  }
 }
 async function removeVideo() {
   await run(() => projectsStore.deleteFinalVideo(id.value), 'Final video deleted')
@@ -178,7 +187,7 @@ watch(
 const settingsChanged = computed(() => !!project.value && (voice.value !== project.value.voiceModel || wpm.value !== project.value.wordsPerMinute))
 
 async function saveSettings() {
-  if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value), 'Settings saved — section videos are rebuilding')) {
+  if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value), 'Settings saved. The section videos are out of date: build them again')) {
     watchRender()
   }
 }
@@ -215,9 +224,9 @@ async function removeProject() {
         <AppIcon name="refresh" :size="15" /> Continue writing
       </button>
     </div>
-    <RouterLink v-else-if="project.generationStatus === 'generating'" :to="{ name: 'progress', params: { id } }" class="mt-6 flex items-center gap-2 rounded-2xl border border-sky-400/20 bg-sky-500/[0.06] px-5 py-4 text-sm text-sky-100 hover:bg-sky-500/10">
-      <AppIcon name="loader" :size="15" class="animate-spin" /> The script is still being written ({{ project.sectionsCompleted }} of {{ project.totalSections || '…' }}). See progress
-    </RouterLink>
+    <div v-else-if="writing" class="mt-6 flex items-center gap-2 rounded-2xl border border-sky-400/20 bg-sky-500/[0.06] px-5 py-4 text-sm text-sky-100" role="status">
+      <AppIcon name="loader" :size="15" class="animate-spin" /> Writing the script… {{ project.sectionsCompleted }} of {{ project.totalSections || '…' }} sections. They appear below as they are written.
+    </div>
 
     <div v-if="loading" class="mt-8 space-y-4" aria-busy="true">
       <div v-for="n in 3" :key="n" class="shimmer h-32 rounded-2xl border border-white/8 bg-ink-850/70" />
@@ -242,9 +251,11 @@ async function removeProject() {
         </div>
         <p class="mt-3 text-sm leading-relaxed text-zinc-200">{{ s.text }}</p>
         <p v-if="s.videoStatus === 'failed' && s.videoError" class="mt-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{{ s.videoError }}</p>
-        <video v-if="s.videoUrl && s.videoStatus === 'ready'" :src="s.videoUrl" controls preload="none" class="mt-3 aspect-video w-full max-w-sm rounded-lg bg-black ring-1 ring-white/10" />
+        <div class="mt-4"><SectionImage :project-id="id" :section="s" @changed="watchRender" /></div>
 
-        <div class="mt-4 border-t border-white/5 pt-4"><SectionImage :project-id="id" :section="s" @changed="watchRender" /></div>
+        <video v-if="s.videoUrl && s.videoStatus === 'ready'" :src="s.videoUrl" controls preload="metadata" class="mt-3 aspect-video w-full max-w-sm rounded-lg bg-black ring-1 ring-white/10" />
+        <p v-else-if="s.videoStatus === 'processing'" class="mt-3 flex items-center gap-2 text-xs text-sky-300"><AppIcon name="loader" :size="14" class="animate-spin" /> Building this section’s video…</p>
+        <p v-else-if="s.videoStatus === 'pending'" class="mt-3 text-xs text-zinc-500">Video not built yet. Add the image, then build it.</p>
 
         <div class="mt-3 flex flex-wrap gap-1">
           <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="startEdit(s.position)">
@@ -253,15 +264,20 @@ async function removeProject() {
           <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="changeTarget = s.position">
             <AppIcon name="wand" :size="14" /> Request changes
           </button>
-          <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="rerender(s.position)">
-            <AppIcon name="refresh" :size="14" /> {{ s.videoStatus === 'failed' ? 'Retry video' : 'Re-render' }}
+          <button
+            :disabled="busy || writing || s.videoStatus === 'processing'"
+            class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-brand-400 hover:bg-brand-500/10 disabled:opacity-40"
+            @click="rerender(s.position)"
+          >
+            <AppIcon name="film" :size="14" /> {{ s.videoStatus === 'ready' ? 'Rebuild video' : s.videoStatus === 'failed' ? 'Retry video' : 'Build video' }}
           </button>
           <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:bg-rose-500/10 hover:text-rose-300" @click="sectionToDelete = s.position">
             <AppIcon name="trash" :size="14" /> Delete
           </button>
         </div>
       </li>
-      <li>
+      <li v-if="!sections.length && writing" class="shimmer h-32 rounded-2xl border border-white/8 bg-ink-850/70" />
+      <li v-if="!writing">
         <button
           class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 py-4 text-sm font-medium text-zinc-400 transition hover:border-brand-400/50 hover:text-white"
           @click="adding = true"
@@ -270,6 +286,22 @@ async function removeProject() {
         </button>
       </li>
     </ul>
+
+    <!-- The two build buttons: nothing is rendered until one of them is pressed -->
+    <div v-if="tab === 'sections' && sections.length" class="sticky bottom-4 z-10 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-ink-900/95 px-5 py-4 shadow-xl shadow-black/40 backdrop-blur">
+      <p class="text-sm text-zinc-300">
+        <span class="font-semibold text-white">{{ sections.length - pendingSections }} of {{ sections.length }}</span> section videos built
+        <span v-if="rendering" class="ml-1 text-sky-300">· building…</span>
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <button :disabled="!canBuild || rendering || pendingSections === 0" class="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-40" @click="buildSections">
+          <AppIcon :name="rendering ? 'loader' : 'film'" :size="16" :class="{ 'animate-spin': rendering }" /> Build section videos
+        </button>
+        <button :disabled="!canBuild" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-accent-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-600/25 hover:brightness-110 disabled:opacity-40" @click="buildVideo">
+          <AppIcon name="sparkles" :size="16" /> Generate final video
+        </button>
+      </div>
+    </div>
 
     <!-- FINAL VIDEO -->
     <section v-else-if="tab === 'video'" class="mt-6">
@@ -305,9 +337,9 @@ async function removeProject() {
             {{ { none: 'No final video yet', processing: 'Assembling your video…', outdated: 'Final video is out of date', failed: 'Final video failed' }[videoStatus] }}
           </h2>
           <p class="mt-1 max-w-md text-sm text-zinc-400">
-            <template v-if="videoStatus === 'none'">Join all {{ sections.length }} section videos into a single video.</template>
+            <template v-if="videoStatus === 'none'">Builds any section video that is missing, then joins all {{ sections.length }} into one video.</template>
             <template v-else-if="videoStatus === 'processing'">This takes a moment. You can leave this page.</template>
-            <template v-else-if="videoStatus === 'outdated'">Sections or settings changed since the last build. {{ pendingSections }} section(s) need a refresh.</template>
+            <template v-else-if="videoStatus === 'outdated'">Sections or settings changed since the last build. {{ pendingSections }} section video(s) will be rebuilt first.</template>
             <template v-else>{{ project.finalVideoError ?? 'The stitching step failed.' }}</template>
           </p>
           <div v-if="videoStatus !== 'processing'" class="mt-5">
@@ -317,7 +349,7 @@ async function removeProject() {
               @click="buildVideo"
             >
               <AppIcon :name="videoStatus === 'none' ? 'film' : 'refresh'" />
-              {{ videoStatus === 'none' ? 'Convert into video' : videoStatus === 'outdated' ? 'Rebuild video' : 'Try again' }}
+              {{ videoStatus === 'none' ? 'Generate final video' : videoStatus === 'outdated' ? 'Rebuild final video' : 'Try again' }}
             </button>
           </div>
           <div v-else class="mt-5 h-1.5 w-56 overflow-hidden rounded-full bg-white/5"><div class="shimmer h-full w-full bg-brand-500/50" /></div>
@@ -329,7 +361,7 @@ async function removeProject() {
     <section v-else class="mt-6 max-w-2xl space-y-6">
       <div class="rounded-2xl border border-white/8 bg-ink-850/70 p-5">
         <h2 class="text-sm font-semibold text-white">Narration</h2>
-        <p class="mt-1 text-xs text-zinc-500">Changing the voice or speed rebuilds every section video.</p>
+        <p class="mt-1 text-xs text-zinc-500">Changing the voice or speed makes every section video out of date. You build them again yourself.</p>
 
         <div class="mt-4 grid gap-5 sm:grid-cols-2">
           <div>
@@ -374,7 +406,7 @@ async function removeProject() {
         class="w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-[15px] leading-relaxed text-white focus:border-brand-400/60 focus:outline-none"
         aria-label="Section text"
       />
-      <p class="mt-2 text-xs text-zinc-500">{{ countWords(editText) }} words · saving rebuilds this section’s video.</p>
+      <p class="mt-2 text-xs text-zinc-500">{{ countWords(editText) }} words · saving makes this section’s video out of date.</p>
       <template #footer>
         <button class="rounded-lg px-3.5 py-2 text-sm font-medium text-zinc-300 hover:bg-white/5" @click="editing = null">Cancel</button>
         <button :disabled="!editText.trim() || busy" class="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white enabled:hover:bg-brand-500 disabled:opacity-40" @click="saveEdit">Save</button>

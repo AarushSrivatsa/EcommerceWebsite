@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 import database as db
 import deps
 import storage
+import video_service
 from config import IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 
 router = APIRouter(prefix="/scripts/{script_id}/sections", tags=["sections"])
@@ -55,7 +56,7 @@ class SectionCreate(BaseModel):
 
 
 @router.post("", response_model=SectionOut, status_code=201)
-async def add_section(script_id: uuid.UUID, body: SectionCreate, render: bool = True):
+async def add_section(script_id: uuid.UUID, body: SectionCreate):
     """Add a section you wrote yourself (at the end, or at `position`, pushing the others down)."""
     from nodes import embed, suggest_image_prompt
     state = await deps.script_or_404(script_id)
@@ -68,7 +69,7 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate, render: bool = 
     embedding, image_prompt = await asyncio.gather(embed(text), suggest_image_prompt(text))
     section = await db.insert_section(script_id, position, text=text, word_count=len(text.split()),
                                       embedding=embedding, image_prompt=image_prompt)
-    await deps.section_changed(script_id, section.id, render)
+    await db.mark_final_outdated(script_id)
     return await section_out(section)
 
 
@@ -77,8 +78,8 @@ class SectionUpdate(BaseModel):
 
 
 @router.patch("/{position}", response_model=SectionOut)
-async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate, render: bool = True):
-    """Write the section text yourself. Its video is rebuilt."""
+async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate):
+    """Write the section text yourself. Its video is out of date until you build it again."""
     from nodes import embed, suggest_image_prompt
     await deps.section_or_404(script_id, position)
     text = body.text.strip()
@@ -87,7 +88,7 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate,
                                               embedding=embedding, image_prompt=image_prompt)
     if section is None:
         raise HTTPException(404, f"section {position} not found")
-    await deps.section_changed(script_id, section.id, render)
+    await db.mark_final_outdated(script_id)
     return await section_out(section)
 
 
@@ -96,8 +97,8 @@ class RewriteIn(BaseModel):
 
 
 @router.post("/{position}/rewrite", response_model=SectionOut)
-async def rewrite_section(script_id: uuid.UUID, position: int, body: RewriteIn, render: bool = True):
-    """Have the LangGraph rewrite this one section from an instruction. Its video is rebuilt."""
+async def rewrite_section(script_id: uuid.UUID, position: int, body: RewriteIn):
+    """Have the LangGraph rewrite this one section from an instruction. Its video is out of date until you build it again."""
     state = await deps.script_or_404(script_id)
     await deps.section_or_404(script_id, position)
     count = await db.count_sections(script_id)
@@ -116,16 +117,21 @@ async def rewrite_section(script_id: uuid.UUID, position: int, body: RewriteIn, 
         raise HTTPException(502, f"rewrite failed: {type(exc).__name__}: {exc}")
     await db.set_state_fields(script_id, generation_status="ready")
     section = await deps.section_or_404(script_id, position)
-    await deps.section_changed(script_id, section.id, render)
+    await db.mark_final_outdated(script_id)
     return await section_out(section)
 
 
 @router.post("/{position}/render", response_model=SectionOut, status_code=202)
-async def rerender_section(script_id: uuid.UUID, position: int):
-    """Force a rebuild of this section's video (e.g. after a failure)."""
+async def render_section(script_id: uuid.UUID, position: int):
+    """Builds (or rebuilds) this one section's video in the background. Poll GET /scripts/{id}/sections."""
+    state = await deps.script_or_404(script_id)
+    deps.require_idle(state)
     section = await deps.section_or_404(script_id, position)
+    if section.video_status == "processing":
+        raise HTTPException(409, "this section's video is already being built")
     updated = await db.update_section_content(script_id, position)     # bumps the revision, status -> pending
-    await deps.section_changed(script_id, section.id)
+    await db.mark_final_outdated(script_id)
+    deps.spawn(video_service.render_section_video(section.id))
     return await section_out(updated)
 
 

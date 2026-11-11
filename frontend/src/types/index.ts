@@ -3,8 +3,7 @@
 
 export type VideoType = 'auto' | 'facts' | 'story'
 
-/** `draft` is frontend-only: the script was written and awaits your approval before rendering. */
-export type GenerationStatus = 'draft' | 'generating' | 'ready' | 'failed'
+export type GenerationStatus = 'generating' | 'ready' | 'failed'
 
 export type FinalVideoStatus = 'none' | 'processing' | 'ready' | 'outdated' | 'failed'
 
@@ -53,14 +52,4 @@ export interface NewProjectForm {
   wordsPerMinute: number
   totalSections: number | null // null = let the model decide
   voiceModel: string
-}
-
-export type StageState = 'done' | 'active' | 'pending' | 'failed'
-
-export interface GenerationStage {
-  key: string
-  label: string
-  description: string
-  state: StageState
-  detail?: string
 }

@@ -13,6 +13,20 @@ from routers.scripts import FinalVideoOut, ScriptOut, script_out
 router = APIRouter(tags=["final video"])
 
 
+@router.post("/scripts/{script_id}/render_sections", response_model=ScriptOut, status_code=202)
+async def render_sections(script_id: uuid.UUID):
+    """Builds the video of every section that does not have an up-to-date one yet (not the final video).
+    Runs in the background: poll GET /scripts/{id}/sections."""
+    state = await deps.script_or_404(script_id)
+    deps.require_idle(state)
+    if state.final_video_status == "processing":
+        raise HTTPException(409, "the final video is being built")
+    if await db.count_sections(script_id) == 0:
+        raise HTTPException(409, "the script has no sections")
+    deps.spawn(video_service.render_all_pending(script_id))
+    return await script_out(state)
+
+
 @router.post("/convert_into_video/{script_id}", response_model=ScriptOut, status_code=202)
 async def convert_into_video(script_id: uuid.UUID):
     """Stitches the per-section videos into one video (rebuilding any section video that is out of date first).
