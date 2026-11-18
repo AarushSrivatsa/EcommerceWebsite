@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import UUID, DateTime, ForeignKey, Integer, Float, Text, UniqueConstraint, func, select, text
+from sqlalchemy import UUID, Boolean, DateTime, ForeignKey, Integer, Float, Text, UniqueConstraint, func, select, text
 from sqlalchemy import update as sql_update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -86,6 +86,19 @@ class State(Base):
     final_video_path: Mapped[str | None] = mapped_column(Text)
     final_video_status: Mapped[str] = mapped_column(Text, default="none", server_default="none")   # none|processing|ready|outdated|failed
     final_video_error: Mapped[str | None] = mapped_column(Text)
+
+    # YouTube upload of the final video
+    youtube_status: Mapped[str] = mapped_column(Text, default="none", server_default="none")   # none|uploading|done|failed
+    youtube_url: Mapped[str | None] = mapped_column(Text)
+    youtube_error: Mapped[str | None] = mapped_column(Text)
+
+
+class YoutubeChannel(Base):
+    __tablename__ = "youtube_channels"
+
+    name: Mapped[str] = mapped_column(Text)
+    credentials: Mapped[str] = mapped_column(Text)      # client id/secret + refresh token, encrypted (see crypto.py)
+    is_selected: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 EMBEDDING_DIM = 384      # bge-small-en-v1.5; a pgvector column has a fixed length, so this must match nodes.EMBEDDING_MODEL
@@ -170,6 +183,17 @@ async def claim_final_video(state_id: uuid.UUID) -> bool:
     return claimed
 
 
+async def claim_youtube_upload(state_id: uuid.UUID) -> bool:
+    stmt = (sql_update(State)
+            .where(State.id == state_id, State.youtube_status != "uploading")
+            .values(youtube_status="uploading", youtube_url=None, youtube_error=None)
+            .returning(State.id))
+    async with SessionLocal() as session:
+        claimed = (await session.execute(stmt)).scalar_one_or_none() is not None
+        await session.commit()
+    return claimed
+
+
 async def mark_final_outdated(state_id: uuid.UUID) -> None:
     """A section changed, so the stitched video no longer matches the script."""
     async with SessionLocal() as session:
@@ -239,6 +263,8 @@ async def reset_interrupted_jobs() -> None:
                               .values(generation_status="failed", generation_error="interrupted by a server restart"))
         await session.execute(sql_update(State).where(State.final_video_status == "processing")
                               .values(final_video_status="failed", final_video_error="interrupted by a server restart"))
+        await session.execute(sql_update(State).where(State.youtube_status == "uploading")
+                              .values(youtube_status="failed", youtube_error="interrupted by a server restart"))
         await session.execute(sql_update(Section).where(Section.video_status == "processing")
                               .values(video_status="pending"))
         await session.commit()
@@ -333,6 +359,54 @@ async def delete_section(state_id: uuid.UUID, position: int) -> Section | None:
     return section
 
 
+# ── youtube channels ──────────────────────────────────────────────────────────
+async def add_channel(name: str, credentials: str) -> YoutubeChannel:
+    """Stored channels are never selected automatically, except the first one."""
+    async with SessionLocal() as session:
+        async with session.begin():
+            first = (await session.execute(select(func.count()).select_from(YoutubeChannel))).scalar_one() == 0
+            channel = YoutubeChannel(name=name, credentials=credentials, is_selected=first)
+            session.add(channel)
+    return channel
+
+
+async def list_channels() -> list[YoutubeChannel]:
+    async with SessionLocal() as session:
+        return list((await session.execute(select(YoutubeChannel).order_by(YoutubeChannel.created_at))).scalars())
+
+
+async def get_channel(channel_id: uuid.UUID) -> YoutubeChannel | None:
+    async with SessionLocal() as session:
+        return await session.get(YoutubeChannel, channel_id)
+
+
+async def get_selected_channel() -> YoutubeChannel | None:
+    async with SessionLocal() as session:
+        stmt = select(YoutubeChannel).where(YoutubeChannel.is_selected.is_(True))
+        return (await session.execute(stmt)).scalars().first()
+
+
+async def select_channel(channel_id: uuid.UUID) -> bool:
+    """Makes this the one selected channel. False if it does not exist."""
+    async with SessionLocal() as session:
+        async with session.begin():
+            if await session.get(YoutubeChannel, channel_id) is None:
+                return False
+            await session.execute(sql_update(YoutubeChannel).values(is_selected=False))
+            await session.execute(sql_update(YoutubeChannel).where(YoutubeChannel.id == channel_id).values(is_selected=True))
+    return True
+
+
+async def delete_channel(channel_id: uuid.UUID) -> bool:
+    async with SessionLocal() as session:
+        async with session.begin():
+            channel = await session.get(YoutubeChannel, channel_id)
+            if channel is None:
+                return False
+            await session.delete(channel)
+    return True
+
+
 # ── video render bookkeeping (compare-and-set on content_rev) ─────────────────
 async def set_section_processing(section_id: uuid.UUID, rev: int) -> bool:
     async with SessionLocal() as session:
@@ -379,6 +453,9 @@ MIGRATIONS = [   # create_all does not add columns to existing tables
     "ALTER TABLE states ADD COLUMN IF NOT EXISTS final_video_path TEXT",
     "ALTER TABLE states ADD COLUMN IF NOT EXISTS final_video_status TEXT NOT NULL DEFAULT 'none'",
     "ALTER TABLE states ADD COLUMN IF NOT EXISTS final_video_error TEXT",
+    "ALTER TABLE states ADD COLUMN IF NOT EXISTS youtube_status TEXT NOT NULL DEFAULT 'none'",
+    "ALTER TABLE states ADD COLUMN IF NOT EXISTS youtube_url TEXT",
+    "ALTER TABLE states ADD COLUMN IF NOT EXISTS youtube_error TEXT",
 ]
 
 

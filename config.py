@@ -15,3 +15,6 @@ VIDEOS_BUCKET = os.getenv('VIDEOS_BUCKET', 'videos')
 AUDIOS_BUCKET = os.getenv('AUDIOS_BUCKET', 'audios')
 SUPABASE_BUCKETS_PUBLIC = os.getenv('SUPABASE_BUCKETS_PUBLIC', 'true').lower() == 'true'   # false -> signed urls
 SIGNED_URL_SECONDS = int(os.getenv('SIGNED_URL_SECONDS', '3600'))
+
+# Secret the stored YouTube credentials are encrypted with (Argon2 key derivation, see crypto.py). Keep it safe: lose it and they cannot be read.
+CREDENTIALS_SECRET = os.getenv('CREDENTIALS_SECRET')

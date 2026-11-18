@@ -13,3 +13,5 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
+      - key: CREDENTIALS_SECRET    # any long random string; encrypts the stored YouTube credentials
+        sync: false

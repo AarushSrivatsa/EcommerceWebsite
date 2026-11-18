@@ -12,7 +12,7 @@ import database as db
 import deps
 import memory
 from edges import build_graph
-from routers import final_video, images, scripts, sections
+from routers import final_video, images, scripts, sections, youtube
 
 """
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ⣴⣿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -63,6 +63,7 @@ app.include_router(scripts.router)
 app.include_router(sections.router)
 app.include_router(images.router)
 app.include_router(final_video.router)
+app.include_router(youtube.router)
 
 
 # ── the website: the built Vue app (frontend/dist), served by this same app ────
