@@ -16,7 +16,8 @@ router = APIRouter(tags=["youtube"])
 
 class ChannelCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)               # any name you like, e.g. the channel's name
-    client_secret_json: dict                                      # the client_secret JSON downloaded from Google Cloud, as is
+    client_id: str = Field(min_length=1)
+    client_secret: str = Field(min_length=1)
     refresh_token: str = Field(min_length=1)                      # of the Google account that owns the channel
 
 
@@ -33,10 +34,8 @@ def channel_out(channel: db.YoutubeChannel) -> ChannelOut:
 @router.post("/youtube/channels", response_model=ChannelOut, status_code=201)
 async def add_channel(body: ChannelCreate):
     """Checks the credentials with Google, then stores them encrypted. The first channel added is selected."""
-    try:
-        stored = youtube_service.credentials_from(body.client_secret_json, body.refresh_token)
-    except KeyError as exc:
-        raise HTTPException(422, f"client_secret_json is missing {exc}")
+    stored = {"client_id": body.client_id.strip(), "client_secret": body.client_secret.strip(),
+              "token_uri": youtube_service.TOKEN_URI, "refresh_token": body.refresh_token.strip()}
     try:
         await asyncio.to_thread(youtube_service.check_credentials, stored)
     except Exception as exc:

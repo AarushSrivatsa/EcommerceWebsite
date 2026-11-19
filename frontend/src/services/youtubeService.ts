@@ -28,8 +28,8 @@ export const youtubeService = {
   async listChannels(): Promise<YoutubeChannel[]> {
     return (await api.get<ChannelDto[]>('/youtube/channels')).map(toChannel)
   },
-  async addChannel(name: string, clientSecretJson: unknown, refreshToken: string): Promise<YoutubeChannel> {
-    return toChannel(await api.post<ChannelDto>('/youtube/channels', { name, client_secret_json: clientSecretJson, refresh_token: refreshToken }))
+  async addChannel(name: string, clientId: string, clientSecret: string, refreshToken: string): Promise<YoutubeChannel> {
+    return toChannel(await api.post<ChannelDto>('/youtube/channels', { name, client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken }))
   },
   async selectChannel(id: string): Promise<YoutubeChannel[]> {
     return (await api.post<ChannelDto[]>(`/youtube/channels/${id}/select`)).map(toChannel)

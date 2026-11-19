@@ -15,7 +15,8 @@ const busy = ref(false)
 const toDelete = ref<YoutubeChannel | null>(null)
 
 const name = ref('')
-const clientJson = ref('')
+const clientId = ref('')
+const clientSecret = ref('')
 const refreshToken = ref('')
 
 async function load() {
@@ -30,17 +31,10 @@ async function load() {
 onMounted(load)
 
 async function add() {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(clientJson.value)
-  } catch {
-    push('The client JSON is not valid JSON', 'error', 6000)
-    return
-  }
   busy.value = true
   try {
-    await youtubeService.addChannel(name.value.trim(), parsed, refreshToken.value.trim())
-    name.value = clientJson.value = refreshToken.value = ''
+    await youtubeService.addChannel(name.value.trim(), clientId.value.trim(), clientSecret.value.trim(), refreshToken.value.trim())
+    name.value = clientId.value = clientSecret.value = refreshToken.value = ''
     push('Channel added', 'success')
     await load()
   } catch (e) {
@@ -105,8 +99,12 @@ async function remove() {
           <input id="ch-name" v-model="name" required maxlength="100" placeholder="e.g. My channel" class="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:border-brand-400/60 focus:outline-none" />
         </div>
         <div>
-          <label for="ch-json" class="text-sm font-medium text-zinc-200">Client JSON</label>
-          <textarea id="ch-json" v-model="clientJson" required rows="6" spellcheck="false" placeholder="The client_secret JSON from Google Cloud" class="mt-2 w-full resize-y rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 font-mono text-xs text-white placeholder:text-zinc-600 focus:border-brand-400/60 focus:outline-none" />
+          <label for="ch-id" class="text-sm font-medium text-zinc-200">Client ID</label>
+          <input id="ch-id" v-model="clientId" required autocomplete="off" spellcheck="false" class="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:border-brand-400/60 focus:outline-none" />
+        </div>
+        <div>
+          <label for="ch-secret" class="text-sm font-medium text-zinc-200">Client secret</label>
+          <input id="ch-secret" v-model="clientSecret" required type="password" autocomplete="off" class="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:border-brand-400/60 focus:outline-none" />
         </div>
         <div>
           <label for="ch-token" class="text-sm font-medium text-zinc-200">Refresh token</label>

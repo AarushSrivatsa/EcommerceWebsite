@@ -21,13 +21,6 @@ log = logging.getLogger("youtube_service")
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
-def credentials_from(client_json: dict, refresh_token: str) -> dict:
-    """The part of Google's client_secret JSON (the "web" or "installed" block) we keep, plus the refresh token."""
-    client = client_json.get("web") or client_json.get("installed") or client_json
-    return {"client_id": client["client_id"], "client_secret": client["client_secret"],
-            "token_uri": client.get("token_uri", TOKEN_URI), "refresh_token": refresh_token}
-
-
 def _google_credentials(stored: dict) -> Credentials:
     return Credentials(token=None, refresh_token=stored["refresh_token"], client_id=stored["client_id"],
                        client_secret=stored["client_secret"], token_uri=stored["token_uri"])
