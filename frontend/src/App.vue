@@ -12,6 +12,7 @@ import ToastHost from '@/components/ToastHost.vue'
           <span class="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500"><AppIcon name="film" :size="16" /></span>
           <span class="text-sm font-semibold">Script to Video</span>
         </RouterLink>
+        <RouterLink to="/youtube" class="ml-auto text-sm text-zinc-400 hover:text-white">YouTube</RouterLink>
       </div>
     </header>
 

@@ -9,6 +9,7 @@ import RewriteModal from '@/components/RewriteModal.vue'
 import SectionImage from '@/components/SectionImage.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import YoutubeUploadPanel from '@/components/YoutubeUploadPanel.vue'
 import { voices } from '@/data/options'
 import { countWords, formatDate, formatDuration, speakingSeconds } from '@/lib/format'
 import { useToast } from '@/lib/toast'
@@ -355,6 +356,7 @@ async function removeProject() {
           <div v-else class="mt-5 h-1.5 w-56 overflow-hidden rounded-full bg-white/5"><div class="shimmer h-full w-full bg-brand-500/50" /></div>
         </div>
       </div>
+      <YoutubeUploadPanel v-if="videoStatus === 'ready'" :project-id="id" />
     </section>
 
     <!-- SETTINGS -->

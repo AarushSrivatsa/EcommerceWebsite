@@ -9,6 +9,7 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'projects', component: () => import('@/views/ProjectsView.vue'), meta: { title: 'Projects' } },
     { path: '/new', name: 'new', component: () => import('@/views/NewProjectView.vue'), meta: { title: 'New project' } },
+    { path: '/youtube', name: 'youtube', component: () => import('@/views/YoutubeChannelsView.vue'), meta: { title: 'YouTube channels' } },
     { path: '/projects/:id', name: 'project', component: () => import('@/views/ProjectDetailView.vue'), meta: { title: 'Project' } },
     { path: '/projects/:id/:old(review|progress)', redirect: (to) => `/projects/${String(to.params.id)}` },   // old links
     { path: '/:pathMatch(.*)*', redirect: '/' },
