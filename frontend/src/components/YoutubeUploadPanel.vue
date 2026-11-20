@@ -29,7 +29,12 @@ const poller = usePolling(async () => {
 
 onMounted(async () => {
   try {
-    ;[channels.value, upload.value] = await Promise.all([youtubeService.listChannels(), youtubeService.getUpload(props.projectId)])
+    const [loadedChannels, currentUpload] = await Promise.all([
+      youtubeService.listChannels(),
+      youtubeService.getUpload(props.projectId),
+    ])
+    channels.value = loadedChannels
+    upload.value = currentUpload
     if (uploading.value) poller.start()
   } catch (e) {
     push(errorMessage(e), 'error', 6000)
