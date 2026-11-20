@@ -15,7 +15,7 @@ const onProjects = computed(() => route.name === 'projects' || route.name === 'p
       <RouterLink to="/" class="brand-lockup">
         <span class="brand-mark"><AppIcon name="film" :size="19" /></span>
         <span class="brand-copy">
-          <strong>Frameflow</strong>
+          <strong>Script to Video</strong>
           <small>VIDEO STUDIO</small>
         </span>
       </RouterLink>
@@ -55,7 +55,7 @@ const onProjects = computed(() => route.name === 'projects' || route.name === 'p
       <div class="mobile-bar">
         <RouterLink to="/" class="brand-lockup">
           <span class="brand-mark"><AppIcon name="film" :size="18" /></span>
-          <span class="brand-copy"><strong>Frameflow</strong></span>
+          <span class="brand-copy"><strong>Script to Video</strong></span>
         </RouterLink>
         <nav class="mobile-nav" aria-label="Main navigation">
           <RouterLink to="/" :class="{ 'mobile-nav-active': onProjects }" aria-label="Projects"><AppIcon name="folder" /></RouterLink>
