@@ -176,20 +176,28 @@ async function removeVideo() {
 // ---- settings ----
 const voice = ref('')
 const wpm = ref(150)
+const similarity = ref(88)
 watch(
   project,
   (p) => {
     if (!p) return
     voice.value = p.voiceModel
     wpm.value = p.wordsPerMinute
+    similarity.value = Math.round(p.similarityThreshold * 100)
   },
   { immediate: true },
 )
-const settingsChanged = computed(() => !!project.value && (voice.value !== project.value.voiceModel || wpm.value !== project.value.wordsPerMinute))
+const mediaSettingsChanged = computed(() => !!project.value && (voice.value !== project.value.voiceModel || wpm.value !== project.value.wordsPerMinute))
+const settingsChanged = computed(() => !!project.value && (
+  mediaSettingsChanged.value || similarity.value !== Math.round(project.value.similarityThreshold * 100)
+))
 
 async function saveSettings() {
-  if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value), 'Settings saved. The section videos are out of date: build them again')) {
-    watchRender()
+  const message = mediaSettingsChanged.value
+    ? 'Narration settings saved. Rebuild the scene videos to apply them.'
+    : 'Similarity limit saved. It applies to future sections and AI rewrites.'
+  if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value, similarity.value / 100), message)) {
+    if (mediaSettingsChanged.value) watchRender()
   }
 }
 
@@ -230,6 +238,11 @@ async function removeProject() {
       <div><strong>Writing your script</strong><p>{{ project.sectionsCompleted }} of {{ project.totalSections || 'the planned' }} sections completed. New sections will appear below.</p></div>
     </div>
 
+    <div v-if="project.researchStatus === 'unavailable' && project.researchError" class="project-alert project-alert-info">
+      <AppIcon name="info" :size="17" />
+      <div><strong>External research could not be loaded</strong><p>{{ project.researchError }}</p></div>
+    </div>
+
     <div v-if="loading" class="project-loading" aria-busy="true">
       <div v-for="n in 3" :key="n" class="shimmer project-loading-card" />
     </div>
@@ -257,6 +270,40 @@ async function removeProject() {
               <span class="section-word-count">{{ s.wordCount }} words</span>
             </div>
             <p class="section-copy">{{ s.text }}</p>
+
+            <div class="section-quality-row">
+              <span v-if="s.similarityScore !== null" :class="{ 'section-quality-warning': s.similarityThreshold !== null && s.similarityScore >= s.similarityThreshold }">
+                Similarity <strong>{{ Math.round(s.similarityScore * 100) }}%</strong>
+              </span>
+              <span v-if="s.similarityThreshold !== null">Limit <strong>{{ Math.round(s.similarityThreshold * 100) }}%</strong></span>
+              <span v-if="s.groundingScore !== null">Evidence check <strong>{{ Math.round(s.groundingScore * 100) }}%</strong></span>
+              <span v-if="s.sources.length">Sources <strong>{{ s.sources.length }}</strong></span>
+            </div>
+
+            <details v-if="s.visualPlan.length" class="visual-beats">
+              <summary>Visual direction · {{ s.visualPlan.length }} beats</summary>
+              <ol>
+                <li v-for="(beat, beatIndex) in s.visualPlan" :key="beatIndex">
+                  <div class="visual-beat-heading">
+                    <strong>Beat {{ String(beatIndex + 1).padStart(2, '0') }}</strong>
+                    <small>{{ beat.camera }}</small>
+                  </div>
+                  <p>{{ beat.visual }}</p>
+                  <small v-if="beat.on_screen_text">On-screen text: {{ beat.on_screen_text }}</small>
+                </li>
+              </ol>
+            </details>
+
+            <div v-if="s.sources.length" class="section-sources">
+              <strong>Research sources</strong>
+              <a
+                v-for="source in s.sources"
+                :key="source.url"
+                :href="source.url"
+                target="_blank"
+                rel="noopener noreferrer"
+              >{{ source.title }}</a>
+            </div>
             <p v-if="s.videoStatus === 'failed' && s.videoError" class="section-error">{{ s.videoError }}</p>
             <SectionImage :project-id="id" :section="s" @changed="watchRender" />
 
@@ -342,6 +389,16 @@ async function removeProject() {
             </div>
             <div><div class="settings-range-heading"><label for="s-wpm" class="field-label">Speaking speed</label><strong>{{ wpm }} words per minute</strong></div>
               <input id="s-wpm" v-model.number="wpm" type="range" min="60" max="300" step="10" />
+            </div>
+
+            <div class="similarity-setting">
+              <div class="settings-range-heading">
+                <label for="s-similarity" class="field-label">Section similarity limit</label>
+                <strong>{{ similarity }}%</strong>
+              </div>
+              <input id="s-similarity" v-model.number="similarity" type="range" min="60" max="100" step="1" />
+              <div class="range-ends"><span>Stricter</span><span>More permissive</span></div>
+              <p class="field-hint">A new section at or above this similarity to an earlier section is sent back for a different fact or story beat. This changes writing only; existing videos remain untouched.</p>
             </div>
           </div>
           <div class="settings-footer"><span>Current runtime: {{ runtime }}</span><button :disabled="!settingsChanged || busy" class="primary-action" @click="saveSettings">Save settings</button></div>
