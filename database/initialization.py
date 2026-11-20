@@ -1,12 +1,12 @@
 """Database engine, sessions, and startup initialization."""
 import asyncio
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateColumn
 
 from config import DATABASE_URL
-from .models import Base, Section, State, YoutubeChannel, EMBEDDING_DIM
+from .models import Base, Section, State, EMBEDDING_DIM
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -68,23 +68,33 @@ async def initialize_database() -> None:
             )
 
         await connection.execute(
-            text("UPDATE states SET generation_status = 'failed', "
-                 "generation_error = 'interrupted by a server restart' "
-                 "WHERE generation_status = 'generating'")
+            update(State)
+            .where(State.generation_status == "generating")
+            .values(
+                generation_status="failed",
+                generation_error="interrupted by a server restart",
+            )
         )
         await connection.execute(
-            text("UPDATE states SET final_video_status = 'failed', "
-                 "final_video_error = 'interrupted by a server restart' "
-                 "WHERE final_video_status = 'processing'")
+            update(State)
+            .where(State.final_video_status == "processing")
+            .values(
+                final_video_status="failed",
+                final_video_error="interrupted by a server restart",
+            )
         )
         await connection.execute(
-            text("UPDATE states SET youtube_status = 'failed', "
-                 "youtube_error = 'interrupted by a server restart' "
-                 "WHERE youtube_status = 'uploading'")
+            update(State)
+            .where(State.youtube_status == "uploading")
+            .values(
+                youtube_status="failed",
+                youtube_error="interrupted by a server restart",
+            )
         )
         await connection.execute(
-            text("UPDATE sections SET video_status = 'pending' "
-                 "WHERE video_status = 'processing'")
+            update(Section)
+            .where(Section.video_status == "processing")
+            .values(video_status="pending")
         )
 
 
