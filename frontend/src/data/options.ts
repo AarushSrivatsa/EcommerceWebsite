@@ -1,13 +1,19 @@
-// Static UI options (not backend data).
+// English voices provided by the Phonon 31M model.
 import type { Voice } from '@/types'
 
-// Kokoro voice ids understood by the backend's `voice_model` field.
 export const voices: Voice[] = [
-  { id: 'af_heart', label: 'Heart', accent: 'American · Female' },
-  { id: 'af_bella', label: 'Bella', accent: 'American · Female' },
-  { id: 'am_michael', label: 'Michael', accent: 'American · Male' },
-  { id: 'bf_emma', label: 'Emma', accent: 'British · Female' },
-  { id: 'bm_george', label: 'George', accent: 'British · Male' },
+  { id: 'Zoey', label: 'Zoey', accent: 'American · Female' },
+  { id: 'Juniper', label: 'Juniper', accent: 'American · Female' },
+  { id: 'Everly', label: 'Everly', accent: 'American · Female' },
+  { id: 'Harper', label: 'Harper', accent: 'American · Female' },
+  { id: 'Hadley', label: 'Hadley', accent: 'American · Female' },
+  { id: 'Delia', label: 'Delia', accent: 'American · Female' },
+  { id: 'Easton', label: 'Easton', accent: 'American · Male' },
+  { id: 'Micah', label: 'Micah', accent: 'American · Male' },
+  { id: 'Trevor', label: 'Trevor', accent: 'American · Male' },
+  { id: 'Russell', label: 'Russell', accent: 'American · Male' },
+  { id: 'Preston', label: 'Preston', accent: 'American · Male' },
+  { id: 'Miles', label: 'Miles', accent: 'American · Male' },
 ]
 
 export const examplePrompts: string[] = [
