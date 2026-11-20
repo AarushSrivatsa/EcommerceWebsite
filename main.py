@@ -34,9 +34,12 @@ async def log_bad_request(request: Request, exc: RequestValidationError):
     print(f"422: {request.method} {request.url.path} -> {exc.errors()}", flush=True)
     return await request_validation_exception_handler(request, exc)
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # tighten for production
-
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health", include_in_schema=False)
 async def health():
@@ -52,7 +55,7 @@ app.include_router(youtube.router)
 
 
 # ── the website: the built Vue app (frontend/dist), served by this same app ────
-FRONTEND_BUILD = Path(__file__).parent / "frontend" / "dist"
+FRONTEND_BUILD = Path(__file__).resolve().parent / "frontend" / "dist"
 
 if FRONTEND_BUILD.is_dir():                      # missing while developing; run `npm run build` in frontend/ or use `npm run dev`
     @app.get("/{path:path}", include_in_schema=False)
