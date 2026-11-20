@@ -9,7 +9,7 @@ RUN npm run build
 # Stage 2: the backend, which also serves that website
 FROM python:3.12-slim
 
-# ffmpeg builds the videos. (espeak-ng, which Kokoro needs, comes bundled inside the espeakng-loader pip package.)
+# ffmpeg builds the section and final videos.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
@@ -20,15 +20,13 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# The models are baked into the image, so a restart or redeploy never downloads them again.
-# int8 is the small one (88 MB file, ~370 MB RAM). The full one is KOKORO_MODEL=kokoro-v1.0.onnx (310 MB file, ~600 MB RAM).
-ARG KOKORO_MODEL=kokoro-v1.0.int8.onnx
-ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/${KOKORO_MODEL} /models/kokoro.onnx
-ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin /models/voices.bin
-ENV KOKORO_MODEL_PATH=/models/kokoro.onnx \
-    KOKORO_VOICES_PATH=/models/voices.bin \
+# Cache both models in the image so Render does not download them on first use.
+ENV HF_HOME=/models/huggingface \
+    PHONON_MODEL_PATH=hf://gradium/phonon-31m-en \
+    PHONON_QUANT=q8 \
     FASTEMBED_CACHE_PATH=/models/fastembed
-RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
+RUN python -c "import ptts; ptts.TTS('hf://gradium/phonon-31m-en', lang='en', quant='q8')" \
+ && python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
 
 COPY . .
 COPY --from=site /site/dist frontend/dist
