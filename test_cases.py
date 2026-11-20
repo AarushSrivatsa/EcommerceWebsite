@@ -18,8 +18,27 @@ async def test_router():
         content=json.dumps({"video_type": "facts", "brief": "STUB BRIEF", "total_sections": 12}))
     nodes.summary_llm = AsyncMock()
     nodes.summary_llm.ainvoke.return_value = SimpleNamespace(content="STUB SUMMARY")
-    nodes.save_state = AsyncMock()      # no database in tests
-    nodes.load_section = AsyncMock(return_value="OLD TEXT OF THE SECTION")
+    saved_states = []
+    loaded_sections = []
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def merge(self, state):
+            saved_states.append(state)
+
+        async def commit(self):
+            pass
+
+        async def scalar(self, statement):
+            loaded_sections.append(statement)
+            return "OLD TEXT OF THE SECTION"
+
+    nodes.SessionLocal = FakeSession
 
     # 0.05 h * 60 * 150 wpm = 450 words / 10 sections = 45 per section (allowed 40.5 to 49.5)
     text = ("An octopus can squeeze through any opening larger than its beak, the only hard part of its body. "
@@ -43,8 +62,10 @@ async def test_router():
     assert out["current_node"] == "router"
     assert out["video_type"] == "facts"                         # the router decided the type
     assert "Decide the video type" in sent_to_brief_llm()
-    nodes.save_state.assert_awaited_once_with(start, out)       # the router saved what it returned
-    nodes.load_section.assert_not_awaited()                     # a new section has no old text
+    assert len(saved_states) == 1
+    assert saved_states[-1].id == start.id
+    assert saved_states[-1].next_step == out["next_step"]
+    assert not loaded_sections                                      # a new section has no old text
 
     # good section -> push, count goes 3 -> 4, summary updated
     out = await router_node(waiting)
@@ -99,7 +120,7 @@ async def test_router():
     assert out["router_prompt"].startswith("Title: Fact 02\n")
     assert "make it funnier" in sent_to_brief_llm() and "OLD TEXT OF THE SECTION" in sent_to_brief_llm()
     assert "shorter" not in sent_to_brief_llm()                 # only this section's change is sent
-    nodes.load_section.assert_awaited_with(start.id, 2)
+    assert len(loaded_sections) == 1                                 # rewrite reads the original section text
 
     # a rewrite that is rejected is retried as the same rewrite
     one_change = {2: "make it funnier"}
