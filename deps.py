@@ -7,7 +7,6 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 
 import memory
-import database.storage as storage
 from aiagent.BaseState import BaseState
 from database.initialization import SessionLocal
 from database.models import Section, State
@@ -52,11 +51,6 @@ async def section_or_404(script_id: uuid.UUID, position: int) -> Section:
 def require_idle(state: State) -> None:
     if state.generation_status == "generating":
         raise HTTPException(409, "the script is being generated, try again when it is done")
-
-
-async def delete_files(files: dict[str, list[str]]) -> None:
-    for bucket, paths in files.items():
-        await storage.delete_quiet(bucket, paths)
 
 
 def state_from_row(row: State, **changes) -> BaseState:
