@@ -43,7 +43,10 @@ async def section_out(section: Section) -> SectionOut:
         for beat in visual_plan
     ])
     visual_plan = [
-        {**beat, "image_url": url}
+        {
+            **{key: value for key, value in beat.items() if key != "image_path"},
+            "image_url": url,
+        }
         for beat, url in zip(visual_plan, beat_urls)
     ]
     image_url, audio_url, video_url = await asyncio.gather(
@@ -172,7 +175,8 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
     from aiagent.nodes import embed, suggest_image_prompt, similarity_limit
 
     state = await deps.script_or_404(script_id)
-    await deps.section_or_404(script_id, position)
+    existing_section = await deps.section_or_404(script_id, position)
+    old_beat_paths = [beat.get("image_path") for beat in (existing_section.visual_plan or []) if beat.get("image_path")]
     text = body.text.strip()
     embedding, image_prompt = await asyncio.gather(
         embed(text), suggest_image_prompt(text)
@@ -222,6 +226,7 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
 
     if section is None:
         raise HTTPException(404, f"section {position} not found")
+    await storage.delete_quiet(IMAGES_BUCKET, old_beat_paths)
     return await section_out(section)
 
 
@@ -355,6 +360,10 @@ async def delete_section(script_id: uuid.UUID, position: int):
         image_path, audio_path, video_path = (
             section.image_path, section.audio_path, section.video_path
         )
+        beat_image_paths = [
+            beat.get("image_path") for beat in (section.visual_plan or [])
+            if beat.get("image_path")
+        ]
         await session.delete(section)
         await session.flush()
 
@@ -387,6 +396,6 @@ async def delete_section(script_id: uuid.UUID, position: int):
         )
         await session.commit()
 
-    await storage.delete_quiet(IMAGES_BUCKET, [image_path])
+    await storage.delete_quiet(IMAGES_BUCKET, [image_path, *beat_image_paths])
     await storage.delete_quiet(AUDIOS_BUCKET, [audio_path])
     await storage.delete_quiet(VIDEOS_BUCKET, [video_path])
