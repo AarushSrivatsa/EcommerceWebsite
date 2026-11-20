@@ -25,6 +25,7 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
     role="link"
     @click="emit('open')"
     @keydown.enter="emit('open')"
+    @keydown.space.prevent="emit('open')"
   >
     <SceneThumb :seed="seed" :label="`${project.estimatedDurationInMinutes} min`" />
 
