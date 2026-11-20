@@ -16,7 +16,7 @@ load_dotenv()
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold
 FALLBACK_SIMILARITY_THRESHOLD = 0.88
-EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"   # 384 dimensions (about 1/3 of the RAM of bge-base), matches EMBEDDING_DIM in database.py
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"   # 384 dimensions (about 1/3 of the RAM of bge-base), matches EMBEDDING_DIM in database.models
 
 brief_schema = {
     "type": "object",
