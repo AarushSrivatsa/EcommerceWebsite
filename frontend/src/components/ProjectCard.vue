@@ -28,8 +28,8 @@ const hasFinalVideo = computed(() => props.project.finalVideoStatus === 'ready' 
     role="link"
     :aria-label="'Open project: ' + project.userPrompt"
     @click="emit('open')"
-    @keydown.enter="emit('open')"
-    @keydown.space.prevent="emit('open')"
+    @keydown.enter.self="emit('open')"
+    @keydown.space.self.prevent="emit('open')"
   >
     <div class="project-card-topline">
       <span class="project-type-pill">{{ typeLabel }}</span>
