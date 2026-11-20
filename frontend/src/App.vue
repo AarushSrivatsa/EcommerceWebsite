@@ -42,7 +42,7 @@ const onProjects = computed(() => route.name === 'projects' || route.name === 'p
     <div class="studio-main">
       <header class="studio-topbar">
         <div class="studio-breadcrumb"><span>Studio</span><AppIcon name="chevron-right" :size="14" /><strong>{{ pageTitle }}</strong></div>
-        <RouterLink to="/new" class="topbar-new"><AppIcon name="plus" :size="15" /> Create video</RouterLink>
+        <RouterLink v-if="route.name !== 'new'" to="/new" class="topbar-new"><AppIcon name="plus" :size="15" /> Create video</RouterLink>
       </header>
 
       <main class="studio-content">
