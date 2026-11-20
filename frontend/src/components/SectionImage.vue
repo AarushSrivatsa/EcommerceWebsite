@@ -55,36 +55,25 @@ async function copyIdea() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 sm:flex-row">
-    <div class="relative w-full shrink-0 sm:w-44">
-      <img v-if="section.imageUrl" :src="section.imageUrl" :alt="`Image for section ${section.position}`" class="aspect-video w-full rounded-lg object-cover ring-1 ring-white/10" loading="lazy" />
-      <button
-        v-else
-        type="button"
-        :disabled="busy"
-        class="grid aspect-video w-full place-items-center rounded-lg border border-dashed border-white/20 bg-black/20 text-zinc-400 transition hover:border-brand-400/60 hover:text-white disabled:opacity-60"
-        @click="input?.click()"
-      >
-        <span class="flex flex-col items-center gap-1 text-xs font-medium"><AppIcon name="upload" :size="20" /> Add image</span>
+  <div class="section-image-row">
+    <div class="section-image-preview">
+      <img v-if="section.imageUrl" :src="section.imageUrl" :alt="'Image for section ' + section.position" loading="lazy" />
+      <button v-else type="button" :disabled="busy" class="section-image-empty" @click="input?.click()">
+        <AppIcon name="image" :size="21" /><span>Add a scene image</span>
       </button>
-      <div v-if="busy" class="absolute inset-0 grid place-items-center rounded-lg bg-black/60"><AppIcon name="loader" class="animate-spin text-white" /></div>
+      <div v-if="busy" class="section-image-busy"><AppIcon name="loader" :size="18" class="animate-spin" /> Uploading</div>
     </div>
 
-    <div class="min-w-0 flex-1">
-      <div v-if="section.imagePrompt" class="rounded-xl border border-brand-400/20 bg-brand-500/[0.07] p-3">
-        <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-brand-400"><AppIcon name="image" :size="13" /> Suggested image</p>
-        <p class="mt-1.5 text-sm leading-relaxed text-zinc-100">{{ section.imagePrompt }}</p>
-        <button type="button" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-white" @click="copyIdea"><AppIcon name="copy" :size="13" /> Copy</button>
+    <div class="section-image-details">
+      <div v-if="section.imagePrompt" class="image-prompt-card">
+        <div class="image-prompt-heading"><AppIcon name="sparkles" :size="14" /> IMAGE IDEA</div>
+        <p>{{ section.imagePrompt }}</p>
+        <button type="button" class="image-prompt-copy" @click="copyIdea"><AppIcon name="copy" :size="13" /> Copy prompt</button>
       </div>
-      <p v-else class="text-xs text-zinc-500">No image suggestion for this section.</p>
-
-      <div class="mt-2 flex flex-wrap gap-1">
-        <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white disabled:opacity-50" @click="input?.click()">
-          <AppIcon name="upload" :size="14" /> {{ section.imageUrl ? 'Replace image' : 'Upload image' }}
-        </button>
-        <button v-if="section.imageUrl" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:bg-rose-500/10 hover:text-rose-300 disabled:opacity-50" @click="remove">
-          <AppIcon name="trash" :size="14" /> Remove image
-        </button>
+      <p v-else class="section-image-no-prompt">No suggested image for this scene.</p>
+      <div class="section-image-actions">
+        <button type="button" :disabled="busy" @click="input?.click()"><AppIcon name="upload" :size="14" /> {{ section.imageUrl ? 'Replace image' : 'Upload image' }}</button>
+        <button v-if="section.imageUrl" type="button" :disabled="busy" class="remove-image-action" @click="remove"><AppIcon name="trash" :size="14" /> Remove</button>
       </div>
       <input ref="input" type="file" :accept="ALLOWED.join(',')" class="hidden" @change="upload" />
     </div>
