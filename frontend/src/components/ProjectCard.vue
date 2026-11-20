@@ -20,49 +20,58 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
 
 <template>
   <article
-    class="group relative flex cursor-pointer flex-col gap-4 rounded-2xl border border-white/8 bg-ink-850/70 p-4 transition hover:-translate-y-0.5 hover:border-brand-400/40 hover:bg-ink-800/80"
+    class="project-card"
     tabindex="0"
     role="link"
+    :aria-label="\`Open project: \${project.userPrompt}\`"
     @click="emit('open')"
     @keydown.enter="emit('open')"
     @keydown.space.prevent="emit('open')"
   >
-    <SceneThumb :seed="seed" :label="`${project.estimatedDurationInMinutes} min`" />
-
-    <div class="flex items-start justify-between gap-3">
-      <h3 class="line-clamp-2 text-[15px] font-semibold leading-snug text-white">{{ project.userPrompt }}</h3>
-      <StatusBadge :status="project.generationStatus" class="shrink-0" />
-    </div>
-
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
-      <span class="inline-flex items-center gap-1.5"><AppIcon name="book" :size="14" />{{ typeLabel }}</span>
-      <span class="inline-flex items-center gap-1.5"><AppIcon name="mic" :size="14" />{{ voice }}</span>
-      <span class="inline-flex items-center gap-1.5"><AppIcon name="layers" :size="14" />{{ project.totalSections }} sections</span>
-    </div>
-
-    <div>
-      <div class="mb-1.5 flex justify-between text-xs text-zinc-500">
-        <span>{{ project.sectionsCompleted }} / {{ project.totalSections }} sections</span>
-        <span>{{ percent }}%</span>
-      </div>
-      <div class="h-1.5 overflow-hidden rounded-full bg-white/5">
-        <div
-          class="h-full rounded-full transition-all"
-          :class="project.generationStatus === 'failed' ? 'bg-rose-500' : 'bg-gradient-to-r from-brand-500 to-accent-500'"
-          :style="{ width: `${percent}%` }"
-        />
+    <div class="project-card-art">
+      <SceneThumb :seed="seed" :label="\`\${project.estimatedDurationInMinutes} min\`" />
+      <div class="project-card-art-overlay">
+        <span class="project-card-type">{{ typeLabel }} VIDEO</span>
+        <span class="project-card-open"><AppIcon name="arrow-right" :size="17" /></span>
       </div>
     </div>
 
-    <div class="mt-auto flex items-center justify-between border-t border-white/5 pt-3 text-xs text-zinc-500">
-      <span>Updated {{ formatDate(project.updatedAt) }}</span>
-      <button
-        class="rounded-lg p-1.5 text-zinc-500 opacity-100 transition hover:bg-rose-500/10 hover:text-rose-300 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
-        aria-label="Delete project"
-        @click.stop="emit('remove')"
-      >
-        <AppIcon name="trash" :size="16" />
-      </button>
+    <div class="project-card-content">
+      <div class="project-card-title-row">
+        <h3>{{ project.userPrompt }}</h3>
+        <StatusBadge :status="project.generationStatus" />
+      </div>
+
+      <div class="project-card-meta">
+        <span><AppIcon name="mic" :size="14" />{{ voice }}</span>
+        <span><AppIcon name="layers" :size="14" />{{ project.totalSections }} sections</span>
+      </div>
+
+      <div class="project-card-progress">
+        <div class="project-card-progress-label">
+          <span>{{ project.sectionsCompleted }} of {{ project.totalSections }} sections written</span>
+          <strong>{{ percent }}%</strong>
+        </div>
+        <div class="progress-track">
+          <div
+            class="progress-fill"
+            :class="{ 'progress-fill-failed': project.generationStatus === 'failed' }"
+            :style="{ width: \`\${percent}%\` }"
+          />
+        </div>
+      </div>
+
+      <div class="project-card-footer">
+        <span>Updated {{ formatDate(project.updatedAt) }}</span>
+        <button
+          class="project-card-delete"
+          aria-label="Delete project"
+          title="Delete project"
+          @click.stop="emit('remove')"
+        >
+          <AppIcon name="trash" :size="16" />
+        </button>
+      </div>
     </div>
   </article>
 </template>
