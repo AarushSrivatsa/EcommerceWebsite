@@ -20,3 +20,4 @@ cryptography==50.0.2
 google-api-python-client==2.202.0
 google-auth==2.62.2
 google-auth-oauthlib==1.5.0       # imported by youtube_uploader.py
+supabase[httpx]==2.34.1          # official Supabase Python SDK
