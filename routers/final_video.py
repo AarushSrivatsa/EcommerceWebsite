@@ -43,6 +43,9 @@ async def convert_into_video(script_id: uuid.UUID):
         count = await session.scalar(
             select(func.count()).select_from(Section).where(Section.state_id == script_id)
         )
+        if not count:
+            raise HTTPException(409, "the script has no sections")
+
         claimed = (
             await session.execute(
                 update(State)
@@ -56,8 +59,6 @@ async def convert_into_video(script_id: uuid.UUID):
         ).scalar_one_or_none()
         await session.commit()
 
-    if not count:
-        raise HTTPException(409, "the script has no sections")
     if claimed is None:
         raise HTTPException(409, "the video is already being built")
 
