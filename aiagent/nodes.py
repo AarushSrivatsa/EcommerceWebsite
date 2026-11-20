@@ -213,17 +213,17 @@ async def router_node(state: BaseState) -> dict:
                 "user_prompted_sectional_changes": {n: c for n, c in changes.items() if n != state.current_section},
                 "rewrite_attempts": 0,
             }
-                async with SessionLocal() as session:
-        await session.merge(State(**state.model_copy(update=update).model_dump()))
-        await session.commit()
+            async with SessionLocal() as session:
+                await session.merge(State(**state.model_copy(update=update).model_dump()))
+                await session.commit()
             return update
 
     # ── 3. nothing waiting, everything saved, nothing to rewrite: the graph is done ──
     elif state.total_sections and saved >= state.total_sections and not changes:
         update = {"next_step": "finish", "current_node": "router"}
-            async with SessionLocal() as session:
-        await session.merge(State(**state.model_copy(update=update).model_dump()))
-        await session.commit()
+        async with SessionLocal() as session:
+            await session.merge(State(**state.model_copy(update=update).model_dump()))
+            await session.commit()
         return update
 
     # ── 4. otherwise write a brief: retry, user rewrite (lowest section first), or the next section ──
@@ -291,7 +291,7 @@ async def router_node(state: BaseState) -> dict:
         "total_sections": state.total_sections or max(1, data["total_sections"]),
         "rewrite_attempts": state.rewrite_attempts + 1 if problems else state.rewrite_attempts,
     }
-        async with SessionLocal() as session:
+    async with SessionLocal() as session:
         await session.merge(State(**state.model_copy(update=update).model_dump()))
         await session.commit()
     return update
