@@ -14,7 +14,6 @@ import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 WIDTH, HEIGHT, FPS = 1280, 720, 24
 CREAM = (242, 235, 220)
 

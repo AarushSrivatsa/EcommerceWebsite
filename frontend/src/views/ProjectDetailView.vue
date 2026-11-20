@@ -428,7 +428,7 @@ async function removeProject() {
             <template v-else>{{ project.finalVideoError ?? 'The video assembly step failed.' }}</template>
           </p>
           <button v-if="videoStatus !== 'processing'" :disabled="busy" class="primary-action mt-5" @click="buildVideo">
-            <AppIcon name="refresh" :size="15" /> {{ videoStatus === 'none' ? 'Generate final video' : videoStatus === 'outdated' ? 'Rebuild final video' : 'Try again' }}
+            <AppIcon name="refresh" :size="15" /> {{ videoStatus === 'none' ? 'Assemble final film' : videoStatus === 'outdated' ? 'Rebuild final film' : 'Try again' }}
           </button>
         </div>
         <YoutubeUploadPanel v-if="videoStatus === 'ready'" :project-id="id" />
