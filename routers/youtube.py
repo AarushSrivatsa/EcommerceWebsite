@@ -287,6 +287,9 @@ async def upload_to_youtube(script_id: uuid.UUID, body: UploadIn):
                 select(YoutubeChannel).where(YoutubeChannel.is_selected.is_(True))
             )
         ).scalars().first()
+        if channel is None:
+            raise HTTPException(409, "no YouTube channel is selected")
+
         claimed = (
             await session.execute(
                 update(State)
@@ -304,8 +307,6 @@ async def upload_to_youtube(script_id: uuid.UUID, body: UploadIn):
         ).scalar_one_or_none()
         await session.commit()
 
-    if channel is None:
-        raise HTTPException(409, "no YouTube channel is selected")
     if claimed is None:
         raise HTTPException(409, "the video is already being uploaded")
 
