@@ -196,7 +196,8 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                     .where(Section.id == section_id, Section.content_rev == revision)
                     .values(
                         video_status="failed",
-                        video_error=f"{type(exc).__name__}: {exc}"[:500],
+                        # Preserve the traceback tail; it contains the underlying worker exception.
+                        video_error=f"{type(exc).__name__}: {exc}"[-2000:],
                     )
                 )
                 await session.commit()
@@ -311,7 +312,8 @@ async def convert_into_video(script_id: uuid.UUID) -> None:
                 .where(State.id == script_id)
                 .values(
                     final_video_status="failed",
-                    final_video_error=f"{type(exc).__name__}: {exc}"[:500],
+                    # Preserve the traceback tail so the actual failure is visible in the UI.
+                    final_video_error=f"{type(exc).__name__}: {exc}"[-2000:],
                 )
             )
             await session.commit()
