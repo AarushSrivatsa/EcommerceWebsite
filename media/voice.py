@@ -381,6 +381,8 @@ def _build_video(
                 video_filter,
                 "-filter_threads",
                 "1",
+                "-filter_complex_threads",
+                "1",
                 "-r",
                 str(fps),
                 "-c:v",
@@ -418,6 +420,14 @@ def build_image_video(
 ) -> None:
     """Create the original single-still scene mode at the same 1080p/30fps quality."""
     duration = max(0.1, float(duration_sec))
+    from PIL import Image
+
+    with Image.open(image_path) as image:
+        pixels = image.width * image.height
+        if pixels > 16_000_000:
+            raise ValueError(
+                f"single image contains {pixels:,} pixels; the maximum is 16,000,000"
+            )
     _build_video(
         [Path(image_path)],
         [duration],

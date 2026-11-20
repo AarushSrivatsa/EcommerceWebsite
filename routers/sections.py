@@ -180,6 +180,8 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
     existing_section = await deps.section_or_404(script_id, position)
+    if existing_section.video_status == "processing":
+        raise HTTPException(409, "wait for the current scene render to finish before editing this section")
     old_beat_paths = [beat.get("image_path") for beat in (existing_section.visual_plan or []) if beat.get("image_path")]
     text = body.text.strip()
     embedding, image_prompt = await asyncio.gather(

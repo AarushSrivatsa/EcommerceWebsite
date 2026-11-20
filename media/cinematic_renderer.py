@@ -282,8 +282,8 @@ def _render_cinematic_video_in_process(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame_count = max(1, int(math.ceil(total_duration * fps)))
     command = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-pixel_format", "rgb24",
+        "ffmpeg", "-y", "-loglevel", "error", "-filter_threads", "1",
+        "-filter_complex_threads", "1", "-f", "rawvideo", "-pixel_format", "rgb24",
         "-video_size", f"{width}x{height}", "-framerate", str(fps),
         "-i", "-", "-i", str(audio_path),
         "-map", "0:v:0", "-map", "1:a:0",
@@ -303,6 +303,8 @@ def _render_cinematic_video_in_process(
             process.stdin.close()
             return_code = process.wait()
         except Exception:
+            if process.stdin is not None:
+                process.stdin.close()
             process.kill()
             process.wait()
             stderr_file.seek(0, 2)
