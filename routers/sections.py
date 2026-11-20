@@ -80,7 +80,7 @@ class SectionUpdate(BaseModel):
 @router.patch("/{position}", response_model=SectionOut)
 async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate):
     """Write the section text yourself. Its video is out of date until you build it again."""
-    from nodes import embed, suggest_image_prompt
+    from aiagent.nodes import embed, suggest_image_prompt
     await deps.section_or_404(script_id, position)
     text = body.text.strip()
     embedding, image_prompt = await asyncio.gather(embed(text), suggest_image_prompt(text))
