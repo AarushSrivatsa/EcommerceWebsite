@@ -1,28 +1,86 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import ToastHost from '@/components/ToastHost.vue'
+
+const route = useRoute()
+const pageTitle = computed(() => String(route.meta.title ?? 'Projects'))
+const onProjects = computed(() => route.name === 'projects' || route.name === 'project')
 </script>
 
 <template>
-  <div class="relative min-h-screen">
-    <header class="sticky top-0 z-30 border-b border-white/5 bg-ink-950/80 backdrop-blur">
-      <div class="mx-auto flex w-full max-w-6xl items-center px-4 py-3 sm:px-6 lg:px-10">
-        <RouterLink to="/" class="flex items-center gap-2.5 text-white">
-          <span class="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500"><AppIcon name="film" :size="16" /></span>
-          <span class="text-sm font-semibold">Script to Video</span>
-        </RouterLink>
-        <RouterLink to="/youtube" class="ml-auto text-sm text-zinc-400 hover:text-white">YouTube</RouterLink>
-      </div>
-    </header>
+  <div class="app-shell">
+    <aside class="app-sidebar" aria-label="Main navigation">
+      <RouterLink to="/" class="brand-lockup">
+        <span class="brand-mark"><AppIcon name="film" :size="19" /></span>
+        <span class="brand-copy">
+          <strong>Frameflow</strong>
+          <small>VIDEO STUDIO</small>
+        </span>
+      </RouterLink>
 
-    <main class="relative min-w-0">
-      <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav class="sidebar-nav">
+        <RouterLink to="/" class="nav-link" :class="{ 'nav-link-active': onProjects }">
+          <AppIcon name="folder" :size="18" />
+          <span>Projects</span>
+        </RouterLink>
+        <RouterLink to="/new" class="nav-link" :class="{ 'nav-link-active': route.name === 'new' }">
+          <AppIcon name="plus" :size="18" />
+          <span>Create a video</span>
+        </RouterLink>
+        <RouterLink to="/youtube" class="nav-link" :class="{ 'nav-link-active': route.name === 'youtube' }">
+          <AppIcon name="upload" :size="18" />
+          <span>YouTube channels</span>
+        </RouterLink>
+      </nav>
+
+      <RouterLink to="/new" class="sidebar-create">
+        <AppIcon name="sparkles" :size="17" />
+        <span>Start a new video</span>
+        <AppIcon name="arrow-right" :size="16" />
+      </RouterLink>
+
+      <div class="sidebar-foot">
+        <span class="sidebar-foot-icon"><AppIcon name="wand" :size="17" /></span>
+        <div>
+          <strong>Your creative space</strong>
+          <p>From a simple idea to a finished video.</p>
+        </div>
+      </div>
+    </aside>
+
+    <div class="app-main">
+      <div class="mobile-bar">
+        <RouterLink to="/" class="brand-lockup">
+          <span class="brand-mark"><AppIcon name="film" :size="18" /></span>
+          <span class="brand-copy"><strong>Frameflow</strong></span>
+        </RouterLink>
+        <nav class="mobile-nav" aria-label="Main navigation">
+          <RouterLink to="/" :class="{ 'mobile-nav-active': onProjects }" aria-label="Projects"><AppIcon name="folder" /></RouterLink>
+          <RouterLink to="/new" :class="{ 'mobile-nav-active': route.name === 'new' }" aria-label="Create a video"><AppIcon name="plus" /></RouterLink>
+          <RouterLink to="/youtube" :class="{ 'mobile-nav-active': route.name === 'youtube' }" aria-label="YouTube channels"><AppIcon name="upload" /></RouterLink>
+        </nav>
+      </div>
+
+      <header class="app-topbar">
+        <div class="topbar-location">
+          <span>Studio</span>
+          <AppIcon name="chevron-right" :size="14" />
+          <strong>{{ pageTitle }}</strong>
+        </div>
+        <RouterLink v-if="route.name !== 'new'" to="/new" class="topbar-create">
+          <AppIcon name="plus" :size="16" /> New project
+        </RouterLink>
+      </header>
+
+      <main class="app-content">
         <RouterView v-slot="{ Component }">
           <component :is="Component" />
         </RouterView>
-      </div>
-    </main>
+      </main>
+    </div>
 
     <ToastHost />
   </div>
