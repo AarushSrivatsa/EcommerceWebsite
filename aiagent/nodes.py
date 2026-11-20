@@ -8,7 +8,8 @@ from sqlalchemy.dialects.postgresql import insert
 
 import memory
 from .BaseState import BaseState
-from database.database import SessionLocal, Section, save_state, load_section
+from database.initialization import SessionLocal
+from database.models import Section, State
 
 load_dotenv()
 
@@ -212,13 +213,17 @@ async def router_node(state: BaseState) -> dict:
                 "user_prompted_sectional_changes": {n: c for n, c in changes.items() if n != state.current_section},
                 "rewrite_attempts": 0,
             }
-            await save_state(state, update)
+                async with SessionLocal() as session:
+        await session.merge(State(**state.model_copy(update=update).model_dump()))
+        await session.commit()
             return update
 
     # ── 3. nothing waiting, everything saved, nothing to rewrite: the graph is done ──
     elif state.total_sections and saved >= state.total_sections and not changes:
         update = {"next_step": "finish", "current_node": "router"}
-        await save_state(state, update)
+            async with SessionLocal() as session:
+        await session.merge(State(**state.model_copy(update=update).model_dump()))
+        await session.commit()
         return update
 
     # ── 4. otherwise write a brief: retry, user rewrite (lowest section first), or the next section ──
@@ -231,7 +236,13 @@ async def router_node(state: BaseState) -> dict:
 
     old_text = None
     if number in changes:
-        old_text = await load_section(state.id, number)          # the rewrite starts from the saved text
+        async with SessionLocal() as session:
+            old_text = await session.scalar(
+                select(Section.text).where(
+                    Section.state_id == state.id,
+                    Section.position == number,
+                )
+            )          # the rewrite starts from the saved text
         task = f"Rewrite section {number}. The user asked: {changes[number]}"
     else:
         task = f"Write section {number}."
@@ -280,7 +291,9 @@ async def router_node(state: BaseState) -> dict:
         "total_sections": state.total_sections or max(1, data["total_sections"]),
         "rewrite_attempts": state.rewrite_attempts + 1 if problems else state.rewrite_attempts,
     }
-    await save_state(state, update)
+        async with SessionLocal() as session:
+        await session.merge(State(**state.model_copy(update=update).model_dump()))
+        await session.commit()
     return update
 
 
@@ -310,7 +323,9 @@ async def writer_node(state: BaseState) -> dict:
         "generated_response_word_count": len(text.split()),
         "similarity_score": None if nearest is None else float(1 - nearest),   # None = nothing to compare = fine
     }
-    await save_state(state, update)
+        async with SessionLocal() as session:
+        await session.merge(State(**state.model_copy(update=update).model_dump()))
+        await session.commit()
     return update
 
 
@@ -357,5 +372,7 @@ async def push_section_node(state: BaseState) -> dict:
         "generated_response_word_count": None,
         "similarity_score": None,
     }
-    await save_state(state, update)
+        async with SessionLocal() as session:
+        await session.merge(State(**state.model_copy(update=update).model_dump()))
+        await session.commit()
     return update
