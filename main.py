@@ -1,4 +1,4 @@
-"""The super robot: starts the app and plugs and the combines the router mini lion robots together."""
+"""FastAPI application entry point."""
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,21 +14,6 @@ import memory
 from aiagent.final_graph import build_graph
 from routers import final_video, images, scripts, sections, youtube
 
-"""
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ⣴⣿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ⠠⡀⠀⠀⠈⠛⠁⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀   ⢀⡀⠀⠀⠀⠹⣷⣦⣤⣠⣤⣴⣾⣿⣆⠀⠀⠀⠀⠀⠀
-⠀⠀⠀ ⢀⣤⣶⣿⣿⣿⣿⣷⣦⡀⠈⠙⠻⠿⠿⠿⠿⠟⠛⠁⠀⠀⠀⠀⠀
-⠀⠀⠀ ⠙⣿⣿⡿⠛⠛⠛⢿⣿⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀ ⠘⠃⠀⠀⠀⠀ ⢀⣿⣿⡇⠀⠀⠀⢀⣴⣾⣿⣿⣿⣷⣦⡀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀  ⢰⣶⣶⣿⡿⠏⠀⠀⠀⣠⣾⣿⣿⡿⠟⠛⠿⣿⣿⡄⠀
-⠀⠀⠀⠀⠀⠀⠀ ⠘⣿⣿⣿⣶⣤⣀⣠⣴⣿⣿⣿⡟⠁⠀⠀⠀ ⠹⣿⣿⠀
-⠐⡄⠀⠀⠀⠀⠀⠀⠀⠀  ⠙⢿⣿⣿⠻⢿⣿⠿⠛⠀⠀⠀   ⢀⣿⣿⠇
-⠀⢿⣄⠀⠀⠀⠀⠀⠀⠀⠀  ⣸⣿⡿⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀  ⣼⣿⣿⠀
-⠀⠈⢿⣿⣶⣤⣀⣀⣀⣠⣴⣿⣿⠇⠀⠀⠹⣶⣦⣄⣀⣀⣠⣾⣿⣿⠇⠀
-⠀⠀⠀⠙⢿⣿⣿⣿⣿⣿⣿⠟⠁⠀⠀⠀⠀ ⠙⠿⣿⣿⣿⣿⣿⡿⠋⠀⠀
-⠀⠀⠀⠀⠀⠀⠈⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ⠈⠉⠉⠀⠀⠀⠀⠀
-"""
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,7 +31,7 @@ app = FastAPI(title="Script to video", lifespan=lifespan)
 @app.exception_handler(RequestValidationError)
 async def log_bad_request(request: Request, exc: RequestValidationError):
     """FastAPI's 422, with what was wrong written to the log (Render shows only "422 Unprocessable Entity")."""
-    print(f"422: {request.method} {request.url.path}?{request.url.query} -> {exc.errors()}", flush=True)
+    print(f"422: {request.method} {request.url.path} -> {exc.errors()}", flush=True)
     return await request_validation_exception_handler(request, exc)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # tighten for production
@@ -67,15 +52,15 @@ app.include_router(youtube.router)
 
 
 # ── the website: the built Vue app (frontend/dist), served by this same app ────
-SITE = Path(__file__).parent / "frontend" / "dist"
+FRONTEND_BUILD = Path(__file__).parent / "frontend" / "dist"
 
-if SITE.is_dir():                      # missing while developing; run `npm run build` in frontend/ or use `npm run dev`
+if FRONTEND_BUILD.is_dir():                      # missing while developing; run `npm run build` in frontend/ or use `npm run dev`
     @app.get("/{path:path}", include_in_schema=False)
     async def website(path: str):
         """A real file from the build (js, css, images), otherwise index.html so Vue's router handles the page."""
-        file = (SITE / path).resolve()
-        if file.is_file() and SITE.resolve() in file.parents:
+        file = (FRONTEND_BUILD / path).resolve()
+        if file.is_file() and FRONTEND_BUILD.resolve() in file.parents:
             return FileResponse(file)
-        if path.startswith(("scripts", "convert_into_video")):     # a mistyped API url must stay a 404, not a web page
+        if path.startswith(("scripts", "convert_into_video", "youtube")):     # a mistyped API url must stay a 404, not a web page
             raise HTTPException(404, "not found")
-        return FileResponse(SITE / "index.html")
+        return FileResponse(FRONTEND_BUILD / "index.html")
