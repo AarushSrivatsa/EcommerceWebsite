@@ -1,7 +1,7 @@
-"""Builds the videos: one per section (voiceover + its image), then one final video stitched from them.
+"""Render section videos, then stitch them into a final video.
 
-Kokoro and ffmpeg are heavy, so they run in a thread and one section is rendered at a time. The finished files
-live in the Supabase buckets; OUTPUT_DIR is only scratch space for a job and is cleaned up when the job ends.
+Phonon and ffmpeg run in worker threads, with one section rendered at a time. Finished files live in Supabase
+Storage; OUTPUT_DIR is temporary workspace and is cleaned after each job.
 """
 import asyncio
 import logging
