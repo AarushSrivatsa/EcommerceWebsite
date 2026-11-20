@@ -136,6 +136,9 @@ class ScriptUpdate(BaseModel):
 @router.patch("/{script_id}", response_model=ScriptOut)
 async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
     state = await deps.script_or_404(script_id)
+    requested = body.model_dump(exclude_unset=True)
+    if state.generation_status == "generating" and "similarity_threshold" in requested:
+        raise HTTPException(409, "the similarity limit cannot be changed while sections are being generated")
     changes = {
         key: value
         for key, value in body.model_dump(exclude_unset=True).items()
