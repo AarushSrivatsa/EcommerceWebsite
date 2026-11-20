@@ -64,7 +64,7 @@ async def delete_channel(channel_id: uuid.UUID):
 class UploadIn(BaseModel):
     title: str | None = Field(default=None, max_length=100)       # default: the script's title
     description: str = Field(default="", max_length=5000)
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
     category_id: str = "22"
     privacy: Literal["private", "unlisted", "public"] = "private"
 
