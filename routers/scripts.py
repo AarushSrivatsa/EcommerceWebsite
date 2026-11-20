@@ -1,29 +1,29 @@
-"""Scripts: create (starts the LangGraph), list, get, update, resume, delete."""
+"""Script creation, editing, generation and deletion routes."""
 import uuid
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select, update
 
-import database.database as db
 import deps
 import database.storage as storage
 from aiagent.BaseState import BaseState
-from config import VIDEOS_BUCKET
+from config import IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
+from database.initialization import SessionLocal
+from database.models import Section, State
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
 
 
 class FinalVideoOut(BaseModel):
-    """Also used by the final_video router."""
-    status: str                           # none | processing | ready | outdated | failed
+    status: str
     url: str | None
     error: str | None
 
 
 class ScriptOut(BaseModel):
-    """What every script endpoint returns (also used by the final_video router)."""
     id: uuid.UUID
     user_prompt: str
     video_type: str | None
@@ -32,23 +32,33 @@ class ScriptOut(BaseModel):
     estimated_duration_in_hours: float
     total_sections: int | None
     sections_completed: int | None
-    generation_status: str                # generating | ready | failed
+    generation_status: str
     generation_error: str | None
     final_video: FinalVideoOut
     created_at: datetime | None
     updated_at: datetime | None
 
 
-async def script_out(s: db.State) -> ScriptOut:
-    """Database row -> ScriptOut."""
+async def script_out(state: State) -> ScriptOut:
     return ScriptOut(
-        id=s.id, user_prompt=s.user_prompt, video_type=s.video_type, voice_model=s.voice_model,
-        words_per_minute=s.words_per_minute, estimated_duration_in_hours=s.estimated_duration_in_hours,
-        total_sections=s.total_sections, sections_completed=s.sections_completed,
-        generation_status=s.generation_status, generation_error=s.generation_error,
-        final_video=FinalVideoOut(status=s.final_video_status, url=await storage.url(VIDEOS_BUCKET, s.final_video_path),
-                                  error=s.final_video_error),
-        created_at=s.created_at, updated_at=s.updated_at)
+        id=state.id,
+        user_prompt=state.user_prompt,
+        video_type=state.video_type,
+        voice_model=state.voice_model,
+        words_per_minute=state.words_per_minute,
+        estimated_duration_in_hours=state.estimated_duration_in_hours,
+        total_sections=state.total_sections,
+        sections_completed=state.sections_completed,
+        generation_status=state.generation_status,
+        generation_error=state.generation_error,
+        final_video=FinalVideoOut(
+            status=state.final_video_status,
+            url=await storage.url(VIDEOS_BUCKET, state.final_video_path),
+            error=state.final_video_error,
+        ),
+        created_at=state.created_at,
+        updated_at=state.updated_at,
+    )
 
 
 class ScriptCreate(BaseModel):
@@ -62,7 +72,7 @@ class ScriptCreate(BaseModel):
     user_prompt: str = Field(min_length=3)
     estimated_duration_in_hours: float = Field(gt=0)
     words_per_minute: int = Field(default=150, ge=60, le=300)
-    total_sections: int | None = Field(default=None, ge=1, le=200)     # None = the model decides
+    total_sections: int | None = Field(default=None, ge=1, le=200)
     voice_model: str = "Zoey"
     video_type: Literal["facts", "story"] | None = None
     similarity_threshold: float | None = Field(default=None, gt=0, le=1)
@@ -70,20 +80,39 @@ class ScriptCreate(BaseModel):
 
 @router.post("", response_model=ScriptOut, status_code=202)
 async def create_script(body: ScriptCreate):
-    """Starts writing the sections in the background. Poll GET /scripts/{id} and GET /scripts/{id}/sections."""
     base = BaseState(
-        user_prompt=body.user_prompt, estimated_duration_in_hours=body.estimated_duration_in_hours,
-        words_per_minute=body.words_per_minute, total_sections=body.total_sections, voice_model=body.voice_model,
-        video_type=body.video_type, similarity_threshold=body.similarity_threshold, sections_completed=0)
-    await db.save_state(base, {})
-    await db.set_state_fields(base.id, generation_status="generating", generation_error=None)
+        user_prompt=body.user_prompt,
+        estimated_duration_in_hours=body.estimated_duration_in_hours,
+        words_per_minute=body.words_per_minute,
+        total_sections=body.total_sections,
+        voice_model=body.voice_model,
+        video_type=body.video_type,
+        similarity_threshold=body.similarity_threshold,
+        sections_completed=0,
+    )
+    async with SessionLocal() as session:
+        session.add(State(**base.model_dump()))
+        await session.flush()
+        await session.execute(
+            update(State)
+            .where(State.id == base.id)
+            .values(generation_status="generating", generation_error=None)
+        )
+        await session.commit()
+
     deps.spawn(deps.generation_job(base))
     return await script_out(await deps.script_or_404(base.id))
 
 
 @router.get("", response_model=list[ScriptOut])
 async def list_scripts(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
-    return [await script_out(s) for s in await db.list_states(limit, offset)]
+    async with SessionLocal() as session:
+        states = list((
+            await session.execute(
+                select(State).order_by(State.created_at.desc()).limit(limit).offset(offset)
+            )
+        ).scalars())
+    return [await script_out(state) for state in states]
 
 
 @router.get("/{script_id}", response_model=ScriptOut)
@@ -98,32 +127,80 @@ class ScriptUpdate(BaseModel):
 
 @router.patch("/{script_id}", response_model=ScriptOut)
 async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
-    """Changing the voice or speaking speed makes every section video out of date (build them again when you are ready)."""
     state = await deps.script_or_404(script_id)
-    changes = body.model_dump(exclude_none=True)
-    changes = {k: v for k, v in changes.items() if getattr(state, k) != v}
+    changes = {
+        key: value
+        for key, value in body.model_dump(exclude_none=True).items()
+        if getattr(state, key) != value
+    }
+
     if changes:
-        await db.set_state_fields(script_id, **changes)
-        await db.mark_all_sections_changed(script_id)
-        await db.mark_final_outdated(script_id)
+        async with SessionLocal() as session:
+            await session.execute(
+                update(State).where(State.id == script_id).values(**changes)
+            )
+            await session.execute(
+                update(Section)
+                .where(Section.state_id == script_id)
+                .values(
+                    content_rev=Section.content_rev + 1,
+                    video_status="pending",
+                    video_error=None,
+                )
+            )
+            await session.execute(
+                update(State)
+                .where(State.id == script_id, State.final_video_status == "ready")
+                .values(final_video_status="outdated")
+            )
+            await session.commit()
+
     return await script_out(await deps.script_or_404(script_id))
 
 
 @router.post("/{script_id}/generate", response_model=ScriptOut, status_code=202)
 async def resume_generation(script_id: uuid.UUID):
-    """Continue writing a script whose generation failed or was interrupted."""
     state = await deps.script_or_404(script_id)
-    if not await db.claim_generation(script_id):
+    base = deps.state_from_row(state)
+    async with SessionLocal() as session:
+        claimed = (
+            await session.execute(
+                update(State)
+                .where(State.id == script_id, State.generation_status != "generating")
+                .values(generation_status="generating", generation_error=None)
+                .returning(State.id)
+            )
+        ).scalar_one_or_none()
+        await session.commit()
+
+    if claimed is None:
         raise HTTPException(409, "the script is already being generated")
-    deps.spawn(deps.generation_job(deps.state_from_row(state)))
+
+    deps.spawn(deps.generation_job(base))
     return await script_out(await deps.script_or_404(script_id))
 
 
 @router.delete("/{script_id}", status_code=204)
 async def delete_script(script_id: uuid.UUID):
-    """Deletes the script, its sections, and every image, audio and video file stored for it."""
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
-    files = await db.delete_state(script_id)
-    if files:
-        await deps.delete_files(files)
+
+    async with SessionLocal() as session:
+        sections = list((
+            await session.execute(
+                select(Section).where(Section.state_id == script_id)
+            )
+        ).scalars())
+        files = {
+            IMAGES_BUCKET: [section.image_path for section in sections if section.image_path],
+            AUDIOS_BUCKET: [section.audio_path for section in sections if section.audio_path],
+            VIDEOS_BUCKET: [section.video_path for section in sections if section.video_path],
+        }
+        if state.final_video_path:
+            files[VIDEOS_BUCKET].append(state.final_video_path)
+
+        await session.delete(state)
+        await session.commit()
+
+    for bucket, paths in files.items():
+        await storage.delete_quiet(bucket, paths)
