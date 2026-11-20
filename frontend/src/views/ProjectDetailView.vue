@@ -317,7 +317,7 @@ async function removeProject() {
         <div v-else class="video-empty-state">
           <span class="video-empty-icon"><AppIcon :name="videoStatus === 'processing' ? 'loader' : videoStatus === 'failed' ? 'alert' : 'film'" :size="27" :class="{ 'animate-spin': videoStatus === 'processing' }" /></span>
           <p class="eyebrow">FINAL VIDEO</p>
-          <h2>{{ { none: 'Your video is not built yet', processing: 'Putting it all together', outdated: 'Your video needs an update', failed: 'The final video could not be built' }[videoStatus] }}</h2>
+          <h2>{{ { none: 'Your video is not built yet', processing: 'Putting it all together', outdated: 'Your video needs an update', failed: 'The final video could not be built', ready: 'The video link is unavailable' }[videoStatus] }}</h2>
           <p>
             <template v-if="videoStatus === 'none'">Build the scene videos and combine them into one finished video.</template>
             <template v-else-if="videoStatus === 'processing'">The scenes are being assembled. You can leave this page while it finishes.</template>
