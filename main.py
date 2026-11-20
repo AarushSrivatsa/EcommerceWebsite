@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 import database.database as db
 import deps
 import memory
-from aiagent.edges import build_graph
+from aiagent.final_graph import build_graph
 from routers import final_video, images, scripts, sections, youtube
 
 """
