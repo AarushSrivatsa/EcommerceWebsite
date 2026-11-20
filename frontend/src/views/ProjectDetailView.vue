@@ -173,6 +173,15 @@ async function removeBeatImage(position: number, beatIndex: number) {
   }
 }
 
+async function copyVisualIdea(visual: string) {
+  try {
+    await navigator.clipboard.writeText(visual)
+    push('Visual idea copied', 'success')
+  } catch {
+    push('Could not copy the visual idea', 'error')
+  }
+}
+
 // ---- writing stopped half way (error, server restart): carry on where it stopped ----
 async function continueWriting() {
   if (await run(() => projectsStore.resumeGeneration(id.value))) watchRender()
@@ -203,8 +212,9 @@ const voice = ref('')
 const wpm = ref(150)
 const similarity = ref(88)
 watch(
-  project,
-  (p) => {
+  () => project.value?.id,
+  () => {
+    const p = project.value
     if (!p) return
     voice.value = p.voiceModel
     wpm.value = p.wordsPerMinute
@@ -325,7 +335,7 @@ async function removeProject() {
                     <label class="visual-beat-upload">
                       <AppIcon name="upload" :size="13" />
                       {{ beat.imageUrl ? 'Replace visual' : 'Add visual' }}
-                      <input type="file" accept=".jpg,.jpeg,.png,.webp,.bmp" @change="uploadBeatImage(s.position, beatIndex, $event)" />
+                      <input type="file" accept=".jpg,.jpeg,.png,.webp,.bmp" :disabled="writing || busy" @change="uploadBeatImage(s.position, beatIndex, $event)" />
                     </label>
                     <button v-if="beat.imageUrl" type="button" class="visual-beat-remove" @click="removeBeatImage(s.position, beatIndex)">Remove</button>
                   </div>
