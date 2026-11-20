@@ -151,7 +151,7 @@ async function confirmDelete() {
     <ConfirmModal
       v-if="toDelete"
       title="Delete this project?"
-      :message="\`“\${toDelete.userPrompt}”, its sections and its videos will be permanently deleted.\`"
+      :message="'“' + toDelete.userPrompt + '”, its sections and its videos will be permanently deleted.'"
       confirm-label="Delete"
       danger
       @confirm="confirmDelete"
