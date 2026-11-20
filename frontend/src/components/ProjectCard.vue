@@ -4,18 +4,21 @@ import { formatDate } from '@/lib/format'
 import { voices } from '@/data/options'
 import type { Project } from '@/types'
 import AppIcon from './AppIcon.vue'
-import SceneThumb from './SceneThumb.vue'
 import StatusBadge from './StatusBadge.vue'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ open: []; remove: [] }>()
 
 const percent = computed(() =>
-  props.project.totalSections ? Math.round((props.project.sectionsCompleted / props.project.totalSections) * 100) : 0,
+  props.project.totalSections
+    ? Math.round((props.project.sectionsCompleted / props.project.totalSections) * 100)
+    : 0,
 )
 const voice = computed(() => voices.find((v) => v.id === props.project.voiceModel)?.label ?? props.project.voiceModel)
-const seed = computed(() => props.project.userPrompt.length)
-const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : props.project.videoType === 'story' ? 'Story' : 'Facts'))
+const typeLabel = computed(() =>
+  props.project.videoType === 'auto' ? 'Auto format' : props.project.videoType === 'story' ? 'Story' : 'Facts',
+)
+const hasFinalVideo = computed(() => props.project.finalVideoStatus === 'ready' && !!props.project.finalVideoUrl)
 </script>
 
 <template>
@@ -28,12 +31,21 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
     @keydown.enter="emit('open')"
     @keydown.space.prevent="emit('open')"
   >
-    <div class="project-card-art">
-      <SceneThumb :seed="seed" :label="project.estimatedDurationInMinutes + ' min'" />
-      <div class="project-card-art-overlay">
-        <span class="project-card-type">{{ typeLabel }} VIDEO</span>
-        <span class="project-card-open"><AppIcon name="arrow-right" :size="17" /></span>
-      </div>
+    <div class="project-card-topline">
+      <span class="project-type-pill">{{ typeLabel }}</span>
+      <span class="project-updated">Updated {{ formatDate(project.updatedAt) }}</span>
+    </div>
+
+    <div v-if="hasFinalVideo" class="project-video-preview">
+      <video
+        :src="project.finalVideoUrl ?? undefined"
+        controls
+        playsinline
+        preload="metadata"
+        aria-label="Preview final video"
+        @click.stop
+      />
+      <span class="project-video-label"><AppIcon name="check" :size="12" /> Final video</span>
     </div>
 
     <div class="project-card-content">
@@ -43,8 +55,9 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
       </div>
 
       <div class="project-card-meta">
-        <span><AppIcon name="mic" :size="14" />{{ voice }}</span>
-        <span><AppIcon name="layers" :size="14" />{{ project.totalSections }} sections</span>
+        <span><AppIcon name="mic" :size="15" />{{ voice }}</span>
+        <span><AppIcon name="layers" :size="15" />{{ project.totalSections }} sections</span>
+        <span><AppIcon name="clock" :size="15" />{{ project.estimatedDurationInMinutes }} min</span>
       </div>
 
       <div class="project-card-progress">
@@ -62,15 +75,18 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
       </div>
 
       <div class="project-card-footer">
-        <span>Updated {{ formatDate(project.updatedAt) }}</span>
-        <button
-          class="project-card-delete"
-          aria-label="Delete project"
-          title="Delete project"
-          @click.stop="emit('remove')"
-        >
-          <AppIcon name="trash" :size="16" />
-        </button>
+        <span>{{ hasFinalVideo ? 'Finished video available' : project.generationStatus === 'generating' ? 'Script is being written' : 'Open to continue editing' }}</span>
+        <div class="project-card-footer-actions">
+          <span class="open-project-hint">Open project <AppIcon name="arrow-right" :size="14" /></span>
+          <button
+            class="project-card-delete"
+            aria-label="Delete project"
+            title="Delete project"
+            @click.stop="emit('remove')"
+          >
+            <AppIcon name="trash" :size="16" />
+          </button>
+        </div>
       </div>
     </div>
   </article>
