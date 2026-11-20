@@ -8,8 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-import database.database as db
 import database.storage as storage
+from database.initialization import initialize_database
 import deps
 import memory
 from aiagent.final_graph import build_graph
@@ -19,8 +19,7 @@ from routers import final_video, images, scripts, sections, youtube
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("startup: preparing the database", flush=True)
-    await db.init_db()
-    await db.reset_interrupted_jobs()
+    await initialize_database()
     deps.graph = build_graph()
     print(f"startup: ready ({memory.rss_mb()} MB)", flush=True)
     try:
