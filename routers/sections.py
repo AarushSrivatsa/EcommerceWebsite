@@ -37,6 +37,15 @@ class SectionOut(BaseModel):
 
 
 async def section_out(section: Section) -> SectionOut:
+    visual_plan = section.visual_plan or []
+    beat_urls = await asyncio.gather(*[
+        storage.url(IMAGES_BUCKET, beat.get("image_path"))
+        for beat in visual_plan
+    ])
+    visual_plan = [
+        {**beat, "image_url": url}
+        for beat, url in zip(visual_plan, beat_urls)
+    ]
     image_url, audio_url, video_url = await asyncio.gather(
         storage.url(IMAGES_BUCKET, section.image_path),
         storage.url(AUDIOS_BUCKET, section.audio_path),
@@ -54,7 +63,7 @@ async def section_out(section: Section) -> SectionOut:
         video_error=section.video_error,
         updated_at=section.updated_at,
         sources=section.sources or [],
-        visual_plan=section.visual_plan or [],
+        visual_plan=visual_plan,
         similarity_score=section.similarity_score,
         similarity_threshold=section.similarity_threshold,
         grounding_score=section.grounding_score,
@@ -170,6 +179,13 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
     )
 
     async with SessionLocal() as session:
+        distance = Section.embedding.cosine_distance(embedding)
+        nearest = await session.scalar(
+            select(func.min(distance)).where(
+                Section.state_id == script_id,
+                Section.position != position,
+            )
+        )
         await session.execute(
             update(Section)
             .where(Section.state_id == script_id, Section.position == position)
@@ -180,7 +196,7 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
                 image_prompt=image_prompt,
                 sources=[],
                 visual_plan=[],
-                similarity_score=None,
+                similarity_score=None if nearest is None else float(1 - nearest),
                 similarity_threshold=similarity_limit(deps.state_from_row(state)),
                 grounding_score=None,
                 grounding_feedback=None,
