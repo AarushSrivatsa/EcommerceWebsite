@@ -593,3 +593,8 @@ a { color: inherit; }
 .section-sources a { display: block; width: fit-content; max-width: 100%; margin-top: 8px; color: #a8bde5; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; text-decoration: underline; text-decoration-color: #566783; text-underline-offset: 2px; }
 .section-sources a:hover { color: #d0dfff; }
 
+
+
+/* Free cinematic renderer guidance */
+.cinematic-free-note, .cinematic-render-hint { margin-top: 8px; color: #8e9aae; font-size: 9px; line-height: 1.6; }
+.cinematic-free-note { padding: 8px 10px; border-left: 2px solid #927cc8; background: #191d2a; }

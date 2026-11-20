@@ -541,6 +541,9 @@ def generate_voiceover(
         "duration_delta_used": round(duration_delta, 4),
         "voice_model": voice_model,
         "correction_passes_used": correction_passes,
+        # Exact per-paragraph durations from the final Phonon pass; the cinematic renderer
+        # uses these to time image arrivals and camera moves to the actual narration.
+        "paragraph_durations_sec": [round(value, 4) for value in paragraph_durations],
     }
 
     if images:

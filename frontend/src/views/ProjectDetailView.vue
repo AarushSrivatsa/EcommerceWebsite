@@ -322,6 +322,7 @@ async function removeProject() {
 
             <details v-if="s.visualPlan.length" class="visual-beats">
               <summary>Visual direction · {{ s.visualPlan.length }} beats</summary>
+              <p class="cinematic-free-note">Every beat becomes animated camera movement and motion graphics for free. Upload a photo when you want a real image placed into the scene.</p>
               <ol>
                 <li v-for="(beat, beatIndex) in s.visualPlan" :key="beatIndex">
                   <div class="visual-beat-heading">
@@ -334,7 +335,7 @@ async function removeProject() {
                   <div class="visual-beat-actions">
                     <label class="visual-beat-upload">
                       <AppIcon name="upload" :size="13" />
-                      {{ beat.imageUrl ? 'Replace visual' : 'Add visual' }}
+                      {{ beat.imageUrl ? 'Replace image' : 'Upload image' }}
                       <input type="file" accept=".jpg,.jpeg,.png,.webp,.bmp" :disabled="writing || busy" @change="uploadBeatImage(s.position, beatIndex, $event)" />
                     </label>
                     <button v-if="beat.imageUrl" type="button" class="visual-beat-remove" @click="removeBeatImage(s.position, beatIndex)">Remove</button>
@@ -370,14 +371,14 @@ async function removeProject() {
               preload="metadata"
               class="section-video-player"
             />
-            <p v-else-if="s.videoStatus === 'processing'" class="section-video-note"><AppIcon name="loader" :size="14" class="animate-spin" /> Building this scene’s video…</p>
-            <p v-else-if="s.videoStatus === 'pending'" class="section-video-note">Scene video hasn’t been built yet.</p>
+            <p v-else-if="s.videoStatus === 'processing'" class="section-video-note"><AppIcon name="loader" :size="14" class="animate-spin" /> Rendering this cinematic scene…</p>
+            <p v-else-if="s.videoStatus === 'pending'" class="section-video-note">This cinematic scene hasn’t been rendered yet.</p>
 
             <div class="section-actions">
               <button @click="startEdit(s.position)"><AppIcon name="pencil" :size="14" /> Edit script</button>
               <button @click="changeTarget = s.position"><AppIcon name="wand" :size="14" /> Ask AI to revise</button>
               <button :disabled="busy || writing || s.videoStatus === 'processing'" @click="rerender(s.position)">
-                <AppIcon name="film" :size="14" /> {{ s.videoStatus === 'ready' ? 'Rebuild scene' : s.videoStatus === 'failed' ? 'Retry scene' : 'Build scene' }}
+                <AppIcon name="film" :size="14" /> {{ s.videoStatus === 'ready' ? 'Rebuild cinematic scene' : s.videoStatus === 'failed' ? 'Retry cinematic scene' : 'Build scene' }}
               </button>
               <button class="section-delete-action" @click="sectionToDelete = s.position"><AppIcon name="trash" :size="14" /> Delete</button>
             </div>
@@ -392,13 +393,13 @@ async function removeProject() {
         <div v-if="sections.length" class="build-panel">
           <div class="build-panel-copy">
             <span class="build-panel-icon"><AppIcon name="film" :size="18" /></span>
-            <div><strong>Ready to make it a video?</strong><p>{{ sections.length - pendingSections }} of {{ sections.length }} scene videos are ready.</p></div>
+            <div><strong>Build your cinematic film</strong><p>{{ sections.length - pendingSections }} of {{ sections.length }} cinematic scenes are ready. No paid video-generation API is used.</p></div>
           </div>
           <div class="build-panel-actions">
             <button :disabled="!canBuild || rendering || pendingSections === 0" class="secondary-action" @click="buildSections">
-              <AppIcon :name="rendering ? 'loader' : 'film'" :size="15" :class="{ 'animate-spin': rendering }" /> Build scene videos
+              <AppIcon :name="rendering ? 'loader' : 'film'" :size="15" :class="{ 'animate-spin': rendering }" /> Render cinematic scenes · free
             </button>
-            <button :disabled="!canBuild" class="primary-action" @click="buildVideo"><AppIcon name="sparkles" :size="15" /> Generate final video</button>
+            <button :disabled="!canBuild" class="primary-action" @click="buildVideo"><AppIcon name="sparkles" :size="15" /> Assemble final film</button>
           </div>
         </div>
       </section>
@@ -421,9 +422,9 @@ async function removeProject() {
           <p class="eyebrow">FINAL VIDEO</p>
           <h2>{{ { none: 'Your video is not built yet', processing: 'Putting it all together', outdated: 'Your video needs an update', failed: 'The final video could not be built', ready: 'The video link is unavailable' }[videoStatus] }}</h2>
           <p>
-            <template v-if="videoStatus === 'none'">Build the scene videos and combine them into one finished video.</template>
+            <template v-if="videoStatus === 'none'">Render the cinematic scenes, then combine them with narration into one finished film.</template>
             <template v-else-if="videoStatus === 'processing'">The scenes are being assembled. You can leave this page while it finishes.</template>
-            <template v-else-if="videoStatus === 'outdated'">The script or settings changed. {{ pendingSections }} scene video(s) will be rebuilt.</template>
+            <template v-else-if="videoStatus === 'outdated'">The script or settings changed. {{ pendingSections }} cinematic scene(s) will be rebuilt.</template>
             <template v-else>{{ project.finalVideoError ?? 'The video assembly step failed.' }}</template>
           </p>
           <button v-if="videoStatus !== 'processing'" :disabled="busy" class="primary-action mt-5" @click="buildVideo">

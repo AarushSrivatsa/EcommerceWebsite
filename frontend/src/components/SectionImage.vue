@@ -73,6 +73,7 @@ async function copyIdea() {
       <p v-else class="section-image-no-prompt">
         {{ section.visualPlan.length ? 'Shared fallback image for storyboard beats without their own visual.' : 'No suggested image for this scene.' }}
       </p>
+      <p class="cinematic-render-hint">Free cinematic animation is generated from your storyboard. Upload a photo to feature it in the moving scene; no AI video API key is required.</p>
       <div class="section-image-actions">
         <button type="button" :disabled="busy" @click="input?.click()"><AppIcon name="upload" :size="14" /> {{ section.imageUrl ? 'Replace image' : 'Upload image' }}</button>
         <button v-if="section.imageUrl" type="button" :disabled="busy" class="remove-image-action" @click="remove"><AppIcon name="trash" :size="14" /> Remove</button>

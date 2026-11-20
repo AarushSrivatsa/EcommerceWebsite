@@ -20,3 +20,7 @@ cryptography==50.0.2
 google-api-python-client==2.202.0
 google-auth==2.62.2
 supabase[httpx]==2.34.1          # official Supabase Python SDK
+
+# Procedural cinematic motion-graphics renderer (vendored MIT engine)
+skia-python==144.1
+Pillow>=10,<13

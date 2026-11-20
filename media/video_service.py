@@ -15,7 +15,8 @@ import database.storage as storage
 from config import OUTPUT_DIR, IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 from database.initialization import SessionLocal
 from database.models import Section, State
-from media.voice import DEFAULT_VOICE, VIDEO_SIZE, generate_voiceover
+from media.voice import DEFAULT_VOICE, generate_voiceover
+from media.cinematic_renderer import render_cinematic_video
 
 log = logging.getLogger("video_service")
 _render_lock = asyncio.Lock()
@@ -36,37 +37,20 @@ def _run_ffmpeg(*args: str) -> None:
         raise RuntimeError(f"ffmpeg failed: {result.stderr.strip()[-300:]}")
 
 
-def _dark_card() -> Path:
-    card = Path(OUTPUT_DIR) / "dark_card.png"
-    if not card.exists():
-        card.parent.mkdir(parents=True, exist_ok=True)
-        width, height = VIDEO_SIZE
-        _run_ffmpeg(
-            "-f", "lavfi", "-i", f"color=c=0x101010:s={width}x{height}",
-            "-frames:v", "1", str(card),
-        )
-    return card
-
-
-def _make_section_files(
+def _make_section_audio(
     text: str,
     words_per_minute: int,
     voice_model: str | None,
-    images: list[Path],
-    paragraph_counts: list[int] | None,
     folder: Path,
-) -> tuple[Path, Path]:
-    audio, video = folder / "section.mp3", folder / "section.mp4"
-    generate_voiceover(
+) -> tuple[Path, dict]:
+    audio = folder / "section.mp3"
+    result = generate_voiceover(
         text,
         audio,
         target_wpm=words_per_minute,
         voice_model=voice_model or DEFAULT_VOICE,
-        image_paths=images,
-        video_path=video,
-        section_paragraph_counts=paragraph_counts,
     )
-    return audio, video
+    return audio, result
 
 
 def _stitch(files: list[Path], output: Path) -> None:
@@ -122,49 +106,62 @@ async def render_section_video(section_id: uuid.UUID) -> None:
         folder = _scratch_dir()
         try:
             visual_plan = section.visual_plan or []
-            paragraph_count = len([
+            paragraphs = [
                 paragraph for paragraph in re.split(r"\n\s*\n", section.text.strip())
                 if paragraph.strip()
-            ])
+            ]
+            paragraph_count = max(1, len(paragraphs))
             use_beats = bool(visual_plan) and len(visual_plan) == paragraph_count
 
-            images: list[Path] = []
-            paragraph_counts: list[int] | None = None
+            # Download optional user photos. Missing photos are intentional: the cinematic
+            # renderer builds animated cards and typography instead of falling back to a still.
+            beat_images: list[Path | None] = []
             if use_beats:
-                paragraph_counts = [1] * len(visual_plan)
                 for index, beat in enumerate(visual_plan):
                     image_path = beat.get("image_path") or section.image_path
                     if image_path:
-                        images.append(await storage.download_to(
+                        beat_images.append(await storage.download_to(
                             IMAGES_BUCKET,
                             image_path,
                             folder / f"beat-{index}{Path(image_path).suffix}",
                         ))
                     else:
-                        images.append(_dark_card())
+                        beat_images.append(None)
             else:
+                section_image = None
                 if section.image_path:
-                    image = await storage.download_to(
+                    section_image = await storage.download_to(
                         IMAGES_BUCKET,
                         section.image_path,
-                        folder / f"image{Path(section.image_path).suffix}",
+                        folder / f"section-image{Path(section.image_path).suffix}",
                     )
-                else:
-                    image = _dark_card()
-                images = [image]
+                beat_images = [section_image] * paragraph_count
 
             async with memory.heavy:
-                memory.report(f"render start (section {section.position})")
-                audio, video = await asyncio.to_thread(
-                    _make_section_files,
+                memory.report(f"narration start (section {section.position})")
+                audio, voice_timing = await asyncio.to_thread(
+                    _make_section_audio,
                     section.text,
                     state.words_per_minute,
                     state.voice_model,
-                    images,
-                    paragraph_counts,
                     folder,
                 )
-                memory.report(f"render done (section {section.position})")
+                memory.report(f"cinematic render start (section {section.position})")
+                video = folder / "section.mp4"
+                await asyncio.to_thread(
+                    render_cinematic_video,
+                    story_text=section.text,
+                    audio_path=audio,
+                    output_path=video,
+                    duration_sec=voice_timing["duration_sec"],
+                    paragraph_durations=voice_timing["paragraph_durations_sec"],
+                    visual_plan=visual_plan if use_beats else [],
+                    image_paths=beat_images,
+                    project_title=state.user_prompt,
+                    section_position=section.position,
+                    video_type=state.video_type,
+                )
+                memory.report(f"cinematic render done (section {section.position})")
 
             audio_path = f"{state.id}/{section.id}-{revision}.mp3"
             video_path = f"{state.id}/{section.id}-{revision}.mp4"
