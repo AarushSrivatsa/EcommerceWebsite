@@ -22,9 +22,9 @@ export interface ResearchSource {
 export interface VisualBeat {
   narration: string
   visual: string
-  on_screen_text: string
+  onScreenText: string
   camera: string
-  imageUrl?: string | null
+  imageUrl: string | null
 }
 
 export interface Section {
