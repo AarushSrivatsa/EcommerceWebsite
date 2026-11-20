@@ -69,6 +69,7 @@ async def generation_job(base: BaseState) -> None:
         await asyncio.wait_for(run_graph(base), GENERATION_TIMEOUT)
     except Exception as exc:
         log.exception("generation failed for %s", base.id)
-        await db.set_state_fields(base.id, generation_status="failed", generation_error=(f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__)[:500])
+        error = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+        await db.set_state_fields(base.id, generation_status="failed", generation_error=error[:500])
         return
     await db.set_state_fields(base.id, generation_status="ready")
