@@ -10,15 +10,26 @@ RUN npm run build
 FROM python:3.12-slim
 
 # ffmpeg builds the section and final videos.
+# ffmpeg renders video; Mesa/EGL and fontconfig are required by skia-python at runtime.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libegl1 \
+    libegl-mesa0 \
+    libgl1 \
+    libglx0 \
+    libglx-mesa0 \
+    libgl1-mesa-dri \
+    libglvnd0 \
+    libfontconfig1 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+ && python -c "import skia; print('Skia runtime dependencies OK')"
 
 # Cache both models in the image so Render does not download them on first use.
 ENV HF_HOME=/models/huggingface \
