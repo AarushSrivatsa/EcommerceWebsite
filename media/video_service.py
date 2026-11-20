@@ -122,21 +122,29 @@ async def render_section_video(section_id: uuid.UUID) -> None:
             shutil.rmtree(folder, ignore_errors=True)
 
 
-_batches: set[uuid.UUID] = set()
+_batch_tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
+
+
+async def _render_all_pending(script_id: uuid.UUID) -> None:
+    for section in await db.load_sections(script_id):
+        if section.video_status != "ready":
+            await render_section_video(section.id)
+
+
+def _forget_batch_task(script_id: uuid.UUID, task: asyncio.Task[None]) -> None:
+    if _batch_tasks.get(script_id) is task:
+        _batch_tasks.pop(script_id, None)
 
 
 async def render_all_pending(script_id: uuid.UUID) -> None:
-    """Renders every section whose video is not up to date, one after another.
-    A second call for the same script while one is running does nothing (the first one covers it)."""
-    if script_id in _batches:
-        return
-    _batches.add(script_id)
-    try:
-        for section in await db.load_sections(script_id):
-            if section.video_status != "ready":
-                await render_section_video(section.id)
-    finally:
-        _batches.discard(script_id)
+    """Render pending sections once; concurrent callers wait for the same batch."""
+    task = _batch_tasks.get(script_id)
+    if task is None:
+        task = asyncio.create_task(_render_all_pending(script_id))
+        _batch_tasks[script_id] = task
+        task.add_done_callback(lambda finished: _forget_batch_task(script_id, finished))
+
+    await asyncio.shield(task)
 
 
 # ── the final video ───────────────────────────────────────────────────────────
