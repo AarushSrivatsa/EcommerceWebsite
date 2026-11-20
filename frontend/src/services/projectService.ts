@@ -15,6 +15,9 @@ interface ScriptDto {
   video_type: 'facts' | 'story' | null
   voice_model: string | null
   words_per_minute: number
+  similarity_threshold: number
+  research_status: 'pending' | 'ready' | 'unavailable'
+  research_error: string | null
   estimated_duration_in_hours: number
   total_sections: number | null
   sections_completed: number | null
@@ -36,6 +39,12 @@ interface SectionDto {
   video_status: SectionVideoStatus
   video_error: string | null
   updated_at: string | null
+  sources: { title: string; url: string; domain: string | null; excerpt: string; similarity: number }[]
+  visual_plan: { narration: string; visual: string; on_screen_text: string; camera: string }[]
+  similarity_score: number | null
+  similarity_threshold: number | null
+  grounding_score: number | null
+  grounding_feedback: string | null
 }
 
 // ---- mappers ----
@@ -59,6 +68,9 @@ function toProject(s: ScriptDto): Project {
     videoType: s.video_type ?? 'auto',
     voiceModel: toVoiceModel(s.voice_model),
     wordsPerMinute: s.words_per_minute,
+    similarityThreshold: s.similarity_threshold,
+    researchStatus: s.research_status,
+    researchError: s.research_error,
     estimatedDurationInMinutes: Math.round(s.estimated_duration_in_hours * 60 * 10) / 10,
     totalSections: s.total_sections ?? 0,
     sectionsCompleted: s.sections_completed ?? 0,
@@ -82,6 +94,12 @@ function toSection(s: SectionDto): Section {
     videoUrl: s.video_url,
     videoStatus: s.video_status,
     videoError: s.video_error,
+    sources: s.sources ?? [],
+    visualPlan: s.visual_plan ?? [],
+    similarityScore: s.similarity_score,
+    similarityThreshold: s.similarity_threshold,
+    groundingScore: s.grounding_score,
+    groundingFeedback: s.grounding_feedback,
   }
 }
 
@@ -103,6 +121,7 @@ export async function createProject(form: NewProjectForm): Promise<Project> {
     total_sections: form.totalSections,
     voice_model: form.voiceModel,
     video_type: form.videoType === 'auto' ? null : form.videoType,
+    similarity_threshold: form.similarityThreshold,
   })
   return toProject(dto)
 }
@@ -111,8 +130,12 @@ export async function resumeGeneration(id: string): Promise<Project> {
   return toProject(await api.post<ScriptDto>(`/scripts/${id}/generate`))
 }
 
-export async function updateSettings(id: string, voiceModel: string, wordsPerMinute: number): Promise<Project> {
-  return toProject(await api.patch<ScriptDto>(`/scripts/${id}`, { voice_model: voiceModel, words_per_minute: wordsPerMinute }))
+export async function updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number): Promise<Project> {
+  return toProject(await api.patch<ScriptDto>(`/scripts/${id}`, {
+    voice_model: voiceModel,
+    words_per_minute: wordsPerMinute,
+    similarity_threshold: similarityThreshold,
+  }))
 }
 
 export async function deleteProject(id: string): Promise<void> {
