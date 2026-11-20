@@ -63,7 +63,7 @@ class ScriptCreate(BaseModel):
     estimated_duration_in_hours: float = Field(gt=0)
     words_per_minute: int = Field(default=150, ge=60, le=300)
     total_sections: int | None = Field(default=None, ge=1, le=200)     # None = the model decides
-    voice_model: str = "af_heart"
+    voice_model: str = "Zoey"
     video_type: Literal["facts", "story"] | None = None
     similarity_threshold: float | None = Field(default=None, gt=0, le=1)
 
