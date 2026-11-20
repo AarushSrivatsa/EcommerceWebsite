@@ -18,6 +18,10 @@ class BaseState(BaseModel):
     generator_response: str | None = None
     similarity_score: float | None = None
     similarity_threshold: float | None = None
+    grounding_score: float | None = None
+    grounding_feedback: str | None = None
+    retrieved_sources: list[dict] | None = None
+    visual_plan: list[dict] | None = None
     generated_response_title: str | None = None
     generated_response_word_count: int | None = None
 
@@ -37,3 +41,8 @@ class BaseState(BaseModel):
 
     # Progress
     current_node: str | None = None
+
+    # Project-scoped research index lifecycle
+    research_complete: bool = False
+    research_status: str = "pending"
+    research_error: str | None = None
