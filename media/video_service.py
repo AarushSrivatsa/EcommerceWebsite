@@ -1,6 +1,7 @@
 """Render section videos and stitch them into a final video."""
 import asyncio
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
@@ -51,7 +52,8 @@ def _make_section_files(
     text: str,
     words_per_minute: int,
     voice_model: str | None,
-    image: Path | None,
+    images: list[Path],
+    paragraph_counts: list[int] | None,
     folder: Path,
 ) -> tuple[Path, Path]:
     audio, video = folder / "section.mp3", folder / "section.mp4"
@@ -60,8 +62,9 @@ def _make_section_files(
         audio,
         target_wpm=words_per_minute,
         voice_model=voice_model or DEFAULT_VOICE,
-        image_paths=[image or _dark_card()],
+        image_paths=images,
         video_path=video,
+        section_paragraph_counts=paragraph_counts,
     )
     return audio, video
 
@@ -118,13 +121,37 @@ async def render_section_video(section_id: uuid.UUID) -> None:
 
         folder = _scratch_dir()
         try:
-            image = None
-            if section.image_path:
-                image = await storage.download_to(
-                    IMAGES_BUCKET,
-                    section.image_path,
-                    folder / f"image{Path(section.image_path).suffix}",
-                )
+            visual_plan = section.visual_plan or []
+            paragraph_count = len([
+                paragraph for paragraph in re.split(r"\n\s*\n", section.text.strip())
+                if paragraph.strip()
+            ])
+            use_beats = bool(visual_plan) and len(visual_plan) == paragraph_count
+
+            images: list[Path] = []
+            paragraph_counts: list[int] | None = None
+            if use_beats:
+                paragraph_counts = [1] * len(visual_plan)
+                for index, beat in enumerate(visual_plan):
+                    image_path = beat.get("image_path") or section.image_path
+                    if image_path:
+                        images.append(await storage.download_to(
+                            IMAGES_BUCKET,
+                            image_path,
+                            folder / f"beat-{index}{Path(image_path).suffix}",
+                        ))
+                    else:
+                        images.append(_dark_card())
+            else:
+                if section.image_path:
+                    image = await storage.download_to(
+                        IMAGES_BUCKET,
+                        section.image_path,
+                        folder / f"image{Path(section.image_path).suffix}",
+                    )
+                else:
+                    image = _dark_card()
+                images = [image]
 
             async with memory.heavy:
                 memory.report(f"render start (section {section.position})")
@@ -133,7 +160,8 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                     section.text,
                     state.words_per_minute,
                     state.voice_model,
-                    image,
+                    images,
+                    paragraph_counts,
                     folder,
                 )
                 memory.report(f"render done (section {section.position})")
