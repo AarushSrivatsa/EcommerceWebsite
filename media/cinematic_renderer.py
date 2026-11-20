@@ -6,28 +6,24 @@ animated cards and typography from the project's narration, storyboard and optio
 from __future__ import annotations
 
 import json
-import logging
 import math
 import re
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-from PIL import Image, ImageDraw
-
-from vendor_cinematic_engine import Card, Film, PenMark, Print, Renderer
-
-log = logging.getLogger("cinematic_renderer")
-
 WIDTH, HEIGHT, FPS = 1280, 720, 24
-ACCENT = (188, 76, 54)
 CREAM = (242, 235, 220)
 
 
 def _ensure_textures(prep: Path) -> None:
     """Create small procedural board/paper textures locally; no downloads or paid assets."""
+    import numpy as np
+    from PIL import Image
+
     prep.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(41)
 
@@ -74,6 +70,8 @@ def _prepare_photos(
     prep: Path,
     image_paths: list[Path | None],
 ) -> tuple[list[str | None], dict[str, dict[str, int]]]:
+    from PIL import Image
+
     photo_dir = prep / "photos"
     photo_dir.mkdir(parents=True, exist_ok=True)
     photo_keys: list[str | None] = []
@@ -115,7 +113,7 @@ def _normalise_durations(
     return [max(0.05, float(value) * scale) for value in durations]
 
 
-def render_cinematic_video(
+def _render_cinematic_video_in_process(
     *,
     story_text: str,
     audio_path: Path,
@@ -129,6 +127,9 @@ def render_cinematic_video(
     video_type: str | None = None,
 ) -> Path:
     """Render one narration section as a continuous cinematic board move and mux its voiceover."""
+    import numpy as np
+    from vendor_cinematic_engine import BigText, Card, Film, PenMark, Print, Renderer
+
     paragraphs = _paragraphs(story_text)
     total_duration = max(0.8, float(duration_sec or 0.8))
     timings = _normalise_durations(paragraphs, paragraph_durations, total_duration)
@@ -149,7 +150,7 @@ def render_cinematic_video(
     doc = SimpleNamespace(dir=work_dir, prep=prep)
     film = Film(total_duration, fps=FPS, look="wall")
     film.auto_cues = False
-    film.auto_whoosh = True
+    film.auto_whoosh = False
     film.fade_in = min(0.45, total_duration * 0.08)
     film.fade_out = min(1.1, total_duration * 0.12)
 
@@ -157,6 +158,13 @@ def render_cinematic_video(
     count = max(1, len(paragraphs))
     first_x = -((count - 1) * beat_gap) / 2
     positions = [first_x + index * beat_gap for index in range(count)]
+    if project_title.strip():
+        film.add(
+            BigText(
+                _short_text(project_title.upper(), 27), first_x, -1630, 238, 0.0,
+                rgb=CREAM, shadow=False, grunge=False, type_on=min(0.7, total_duration * 0.12), sfx=False,
+            )
+        )
     elapsed = 0.0
     accent = (190, 80, 52) if video_type == "story" else (178, 153, 94)
 
@@ -296,3 +304,68 @@ def render_cinematic_video(
         message = stderr.decode("utf-8", errors="replace").strip()[-1200:]
         raise RuntimeError(f"cinematic FFmpeg render failed: {message}")
     return output_path
+
+
+def render_cinematic_video(
+    *,
+    story_text: str,
+    audio_path: Path,
+    output_path: Path,
+    duration_sec: float,
+    paragraph_durations: list[float] | None,
+    visual_plan: list[dict] | None,
+    image_paths: list[Path | None],
+    project_title: str,
+    section_position: int,
+    video_type: str | None = None,
+) -> Path:
+    """Run Skia in a short-lived worker so its native memory is released after each scene."""
+    config_path = Path(output_path).parent / "cinematic-render.json"
+    config = {
+        "story_text": story_text,
+        "audio_path": str(audio_path),
+        "output_path": str(output_path),
+        "duration_sec": duration_sec,
+        "paragraph_durations": paragraph_durations,
+        "visual_plan": visual_plan,
+        "image_paths": [str(path) if path is not None else None for path in image_paths],
+        "project_title": project_title,
+        "section_position": section_position,
+        "video_type": video_type,
+    }
+    config_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    project_root = Path(__file__).resolve().parents[1]
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "media.cinematic_renderer", "--config", str(config_path)],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        config_path.unlink(missing_ok=True)
+
+    if result.returncode:
+        details = (result.stderr or result.stdout or "worker exited without diagnostics").strip()
+        raise RuntimeError(f"cinematic render worker failed: {details[-1600:]}")
+    return Path(output_path)
+
+
+def _worker_main(config_path: Path) -> None:
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["audio_path"] = Path(config["audio_path"])
+    config["output_path"] = Path(config["output_path"])
+    config["image_paths"] = [
+        Path(path) if path else None for path in config.get("image_paths", [])
+    ]
+    _render_cinematic_video_in_process(**config)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True)
+    arguments = parser.parse_args()
+    _worker_main(Path(arguments.config))

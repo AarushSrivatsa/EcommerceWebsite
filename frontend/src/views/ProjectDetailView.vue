@@ -230,7 +230,7 @@ const settingsChanged = computed(() => !!project.value && (
 async function saveSettings() {
   const needsRerender = mediaSettingsChanged.value
   const message = needsRerender
-    ? 'Narration settings saved. Rebuild the scene videos to apply them.'
+    ? 'Narration settings saved. Rebuild cinematic scenes to apply them.'
     : 'Similarity limit saved. It applies to future sections and AI rewrites.'
   if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value, similarity.value / 100), message)) {
     if (needsRerender) watchRender()
@@ -378,7 +378,7 @@ async function removeProject() {
               <button @click="startEdit(s.position)"><AppIcon name="pencil" :size="14" /> Edit script</button>
               <button @click="changeTarget = s.position"><AppIcon name="wand" :size="14" /> Ask AI to revise</button>
               <button :disabled="busy || writing || s.videoStatus === 'processing'" @click="rerender(s.position)">
-                <AppIcon name="film" :size="14" /> {{ s.videoStatus === 'ready' ? 'Rebuild cinematic scene' : s.videoStatus === 'failed' ? 'Retry cinematic scene' : 'Build scene' }}
+                <AppIcon name="film" :size="14" /> {{ s.videoStatus === 'ready' ? 'Rebuild cinematic scene' : s.videoStatus === 'failed' ? 'Retry cinematic scene' : 'Generate cinematic scene' }}
               </button>
               <button class="section-delete-action" @click="sectionToDelete = s.position"><AppIcon name="trash" :size="14" /> Delete</button>
             </div>
