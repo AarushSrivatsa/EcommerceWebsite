@@ -190,9 +190,13 @@ async def research_node(state: BaseState) -> dict:
 
     results = await asyncio.gather(*(search_sources(query) for query in queries))
     sources = [source for batch in results for source in batch]
-    count = await index_sources(state.id, sources)
+    try:
+        count = await index_sources(state.id, sources)
+    except Exception as exc:
+        log.warning("research indexing failed for %s: %s", state.id, exc)
+        count = 0
     status = "ready" if count else "unavailable"
-    error = None if count else "No usable web sources were retrieved. The script can still be generated, but it will not have external research support."
+    error = None if count else "No usable web sources could be indexed. The script can still be generated, but it will not have external research support."
     update = {
         "current_node": "research",
         "research_complete": True,
@@ -236,7 +240,11 @@ async def _grade_evidence(brief: str, sources: list[dict]) -> tuple[list[dict], 
 
 
 async def retrieve_section_evidence(state: BaseState, brief: str) -> tuple[list[dict], str]:
-    sources = await retrieve_sources(state.id, brief, limit=8)
+    try:
+        sources = await retrieve_sources(state.id, brief, limit=8)
+    except Exception as exc:
+        log.warning("project retrieval failed for %s: %s", state.id, exc)
+        sources = []
     relevant, sufficient, reason = await _grade_evidence(brief, sources)
 
     if not sufficient:
@@ -249,9 +257,12 @@ async def retrieve_section_evidence(state: BaseState, brief: str) -> tuple[list[
             ])
             extra = await search_sources(query.strip())
             if extra:
-                await index_sources(state.id, extra)
-                sources = await retrieve_sources(state.id, brief, limit=10)
-                relevant, sufficient, reason = await _grade_evidence(brief, sources)
+                try:
+                    await index_sources(state.id, extra)
+                    sources = await retrieve_sources(state.id, brief, limit=10)
+                    relevant, sufficient, reason = await _grade_evidence(brief, sources)
+                except Exception as exc:
+                    log.warning("corrective indexing failed: %s", exc)
         except Exception as exc:
             log.warning("corrective research failed: %s", exc)
 
