@@ -140,7 +140,7 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
             word_count=len(text.split()),
             embedding=embedding,
             image_prompt=image_prompt,
-            similarity_score=None if nearest is None else float(1 - nearest),
+            similarity_score=None if nearest is None else max(0.0, min(1.0, float(1 - nearest))),
             similarity_threshold=similarity_limit(deps.state_from_row(state)),
             sources=[],
             visual_plan=[],
