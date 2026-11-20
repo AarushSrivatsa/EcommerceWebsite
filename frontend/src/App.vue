@@ -26,10 +26,6 @@ const onProjects = computed(() => route.name === 'projects' || route.name === 'p
           <AppIcon name="folder" :size="18" />
           <span>Projects</span>
         </RouterLink>
-        <RouterLink to="/new" class="nav-link" :class="{ 'nav-link-active': route.name === 'new' }">
-          <AppIcon name="plus" :size="18" />
-          <span>Create a video</span>
-        </RouterLink>
         <RouterLink to="/youtube" class="nav-link" :class="{ 'nav-link-active': route.name === 'youtube' }">
           <AppIcon name="upload" :size="18" />
           <span>YouTube channels</span>
@@ -70,9 +66,6 @@ const onProjects = computed(() => route.name === 'projects' || route.name === 'p
           <AppIcon name="chevron-right" :size="14" />
           <strong>{{ pageTitle }}</strong>
         </div>
-        <RouterLink v-if="route.name !== 'new'" to="/new" class="topbar-create">
-          <AppIcon name="plus" :size="16" /> New project
-        </RouterLink>
       </header>
 
       <main class="app-content">
