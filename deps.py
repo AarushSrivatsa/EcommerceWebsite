@@ -8,7 +8,7 @@ from fastapi import HTTPException
 import database.database as db
 import memory
 import database.storage as storage
-from BaseState import BaseState
+from aiagent.BaseState import BaseState
 
 log = logging.getLogger("api")
 
