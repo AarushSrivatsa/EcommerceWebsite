@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import database.database as db
 import deps
 import database.storage as storage
-from BaseState import BaseState
+from aiagent.BaseState import BaseState
 from config import VIDEOS_BUCKET
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
