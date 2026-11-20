@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 import crypto
-import database as db
+import database.database as db
 import deps
-import youtube_service
+import media.youtube_service as youtube_service
 
 router = APIRouter(tags=["youtube"])
 

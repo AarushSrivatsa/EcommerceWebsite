@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 from langgraph.graph import END
 import nodes
 from nodes import router_node
-from edges import route_after_router
+from aiagent.edges import route_after_router
 from BaseState import BaseState
 
 

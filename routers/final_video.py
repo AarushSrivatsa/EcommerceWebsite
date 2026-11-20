@@ -3,10 +3,10 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-import database as db
+import database.database as db
 import deps
-import storage
-import video_service
+import database.storage as storage
+import media.video_service as video_service
 from config import VIDEOS_BUCKET
 from routers.scripts import FinalVideoOut, ScriptOut, script_out
 

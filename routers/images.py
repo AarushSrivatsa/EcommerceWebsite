@@ -5,9 +5,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-import database as db
+import database.database as db
 import deps
-import storage
+import database.storage as storage
 from config import IMAGES_BUCKET
 from routers.sections import SectionOut, section_out
 

@@ -6,10 +6,10 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-import database as db
+import database.database as db
 import deps
-import storage
-import video_service
+import database.storage as storage
+import media.video_service as video_service
 from config import IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 
 router = APIRouter(prefix="/scripts/{script_id}/sections", tags=["sections"])

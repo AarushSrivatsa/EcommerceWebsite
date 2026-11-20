@@ -6,9 +6,9 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-import database as db
+import database.database as db
 import deps
-import storage
+import database.storage as storage
 from BaseState import BaseState
 from config import VIDEOS_BUCKET
 

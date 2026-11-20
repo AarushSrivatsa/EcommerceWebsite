@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 import memory
 from BaseState import BaseState
-from database import SessionLocal, Section, save_state, load_section
+from database.database import SessionLocal, Section, save_state, load_section
 
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold

@@ -8,10 +8,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-import database as db
+import database.database as db
 import deps
 import memory
-from edges import build_graph
+from aiagent.edges import build_graph
 from routers import final_video, images, scripts, sections, youtube
 
 """

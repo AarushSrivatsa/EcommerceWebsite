@@ -11,11 +11,11 @@ import tempfile
 import uuid
 from pathlib import Path
 
-import database as db
+import database.database as db
 import memory
-import storage
+import database.storage as storage
 from config import OUTPUT_DIR, IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
-from voice import DEFAULT_VOICE, VIDEO_SIZE, generate_voiceover
+from media.voice import DEFAULT_VOICE, VIDEO_SIZE, generate_voiceover
 
 log = logging.getLogger("video_service")
 

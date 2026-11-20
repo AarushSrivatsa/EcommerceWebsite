@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from BaseState import BaseState
-
+from nodes import router_node, writer_node, push_section_node
 
 def route_after_router(state: BaseState) -> str:
     return {"write": "writer", "push": "push_section", "finish": END}[state.next_step]
@@ -9,7 +9,6 @@ def route_after_router(state: BaseState) -> str:
 def build_graph():
     """The graph only writes (or rewrites) sections. It stops when every section is saved and nothing is
     waiting to be rewritten. Everything about images, audio and video lives in the API, not here."""
-    from nodes import router_node, writer_node, push_section_node
 
     graph = StateGraph(BaseState)
     graph.add_node("router", router_node)

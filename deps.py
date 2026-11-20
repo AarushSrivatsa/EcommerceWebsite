@@ -5,9 +5,9 @@ import uuid
 
 from fastapi import HTTPException
 
-import database as db
+import database.database as db
 import memory
-import storage
+import database.storage as storage
 from BaseState import BaseState
 
 log = logging.getLogger("api")

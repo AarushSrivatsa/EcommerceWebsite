@@ -11,10 +11,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 import crypto
-import database as db
-import storage
+import database.database as db
+import database.storage as storage
 from config import OUTPUT_DIR, VIDEOS_BUCKET
-from youtube_uploader import upload_video
+from media.youtube_uploader import upload_video
 
 log = logging.getLogger("youtube_service")
 
