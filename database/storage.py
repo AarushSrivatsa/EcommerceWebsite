@@ -1,99 +1,138 @@
-"""Supabase Storage over its REST API (buckets: images, videos, audios)."""
+"""Supabase Storage access through the official asynchronous Supabase client."""
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from pathlib import Path
-from urllib.parse import quote
 
-import httpx
+from supabase import AsyncClient, acreate_client
 
-from config import SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKETS_PUBLIC, SIGNED_URL_SECONDS
+from config import (
+    SIGNED_URL_SECONDS,
+    SUPABASE_BUCKETS_PUBLIC,
+    SUPABASE_SERVICE_KEY,
+    SUPABASE_URL,
+)
 
 log = logging.getLogger("storage")
-_client: httpx.AsyncClient | None = None
+_client: AsyncClient | None = None
+_client_lock = asyncio.Lock()
 
 
 class StorageError(RuntimeError):
-    pass
+    """A storage operation failed or Supabase Storage is not configured."""
 
 
-def _http() -> httpx.AsyncClient:
+async def _get_client() -> AsyncClient:
+    """Create the shared Supabase client lazily and reuse its connection pool."""
     global _client
-    if _client is None:
-        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-            raise StorageError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
-        _client = httpx.AsyncClient(
-            base_url=f"{SUPABASE_URL}/storage/v1",
-            headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}", "apikey": SUPABASE_SERVICE_KEY},
-            timeout=httpx.Timeout(600, connect=30),
-        )
+    if _client is not None:
+        return _client
+
+    async with _client_lock:
+        if _client is None:
+            if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+                raise StorageError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+            try:
+                _client = await acreate_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+            except Exception as exc:
+                raise StorageError(f"could not initialize the Supabase client: {exc}") from exc
+
     return _client
 
 
-def _check(response: httpx.Response, action: str) -> None:
-    if response.status_code >= 400:
-        raise StorageError(f"{action} failed ({response.status_code}): {response.text[:300]}")
-
-
-def _object(bucket: str, path: str) -> str:
-    return f"/object/{bucket}/{quote(path)}"
+async def close() -> None:
+    """Close the shared client's connections during application shutdown."""
+    global _client
+    if _client is not None:
+        client, _client = _client, None
+        await client.aclose()
 
 
 async def upload_bytes(bucket: str, path: str, data: bytes, content_type: str) -> str:
-    response = await _http().post(_object(bucket, path), content=data,
-                                  headers={"Content-Type": content_type, "x-upsert": "true"})
-    _check(response, f"upload {bucket}/{path}")
+    try:
+        client = await _get_client()
+        await client.storage.from_(bucket).upload(
+            path,
+            data,
+            file_options={"content-type": content_type, "upsert": "true"},
+        )
+    except Exception as exc:
+        raise StorageError(f"upload {bucket}/{path} failed: {exc}") from exc
     return path
 
 
-async def _chunks(file: Path, size: int = 1024 * 1024):
-    """The file in 1 MB pieces, so a big video is never held in memory all at once."""
-    with open(file, "rb") as handle:
+async def _chunks(file: Path, size: int = 1024 * 1024) -> AsyncIterator[bytes]:
+    """Yield 1 MB chunks so large video files are not loaded into memory."""
+    with file.open("rb") as handle:
         while chunk := await asyncio.to_thread(handle.read, size):
             yield chunk
 
 
 async def upload_file(bucket: str, path: str, file: Path, content_type: str) -> str:
-    """Streams the file from disk (an hour of video is hundreds of MB: far too much to read into RAM)."""
-    response = await _http().post(_object(bucket, path), content=_chunks(file),
-                                  headers={"Content-Type": content_type, "x-upsert": "true",
-                                           "Content-Length": str(Path(file).stat().st_size)})
-    _check(response, f"upload {bucket}/{path}")
+    """Stream a file from disk through the official Supabase Storage SDK."""
+    try:
+        client = await _get_client()
+        await client.storage.from_(bucket).upload(
+            path,
+            _chunks(Path(file)),
+            file_options={"content-type": content_type, "upsert": "true"},
+        )
+    except Exception as exc:
+        raise StorageError(f"upload {bucket}/{path} failed: {exc}") from exc
     return path
 
 
 async def download_to(bucket: str, path: str, dest: Path) -> Path:
-    async with _http().stream("GET", _object(bucket, path)) as response:
-        if response.status_code >= 400:
-            await response.aread()
-            _check(response, f"download {bucket}/{path}")
-        with open(dest, "wb") as out:
-            async for chunk in response.aiter_bytes():
-                out.write(chunk)
+    """Download an object with the Supabase SDK and write it to the requested path."""
+    try:
+        client = await _get_client()
+        data = await client.storage.from_(bucket).download(path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(dest.write_bytes, data)
+    except Exception as exc:
+        raise StorageError(f"download {bucket}/{path} failed: {exc}") from exc
     return dest
 
 
 async def delete(bucket: str, paths: list[str]) -> None:
-    paths = [p for p in paths if p]
+    paths = [path for path in paths if path]
     if not paths:
         return
-    response = await _http().request("DELETE", f"/object/{bucket}", json={"prefixes": paths})
-    _check(response, f"delete from {bucket}")
+    try:
+        client = await _get_client()
+        await client.storage.from_(bucket).remove(paths)
+    except Exception as exc:
+        raise StorageError(f"delete from {bucket} failed: {exc}") from exc
 
 
 async def delete_quiet(bucket: str, paths: list[str | None]) -> None:
-    """Delete, but never raise: a leftover file must not break the user's request."""
+    """Delete files without letting cleanup failures break the user's request."""
     try:
-        await delete(bucket, [p for p in paths if p])
+        await delete(bucket, [path for path in paths if path])
     except Exception as exc:
         log.warning("could not delete %s from %s: %s", paths, bucket, exc)
 
 
 async def url(bucket: str, path: str | None) -> str | None:
-    """A link the browser can load. Public buckets get a plain url, private ones a signed url."""
+    """Return a public URL or a time-limited signed URL for a stored object."""
     if not path:
         return None
-    if SUPABASE_BUCKETS_PUBLIC:
-        return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{quote(path)}"
-    response = await _http().post(f"/object/sign/{bucket}/{quote(path)}", json={"expiresIn": SIGNED_URL_SECONDS})
-    _check(response, f"sign {bucket}/{path}")
-    return f"{SUPABASE_URL}/storage/v1{response.json()['signedURL']}"
+
+    try:
+        client = await _get_client()
+        bucket_api = client.storage.from_(bucket)
+
+        if SUPABASE_BUCKETS_PUBLIC:
+            return await bucket_api.get_public_url(path)
+
+        response = await bucket_api.create_signed_url(path, SIGNED_URL_SECONDS)
+        signed_url = response.get("signedURL") or response.get("signedUrl")
+        if not signed_url:
+            raise StorageError(f"Supabase did not return a signed URL for {bucket}/{path}")
+        if signed_url.startswith(("http://", "https://")):
+            return signed_url
+        return f"{SUPABASE_URL}/storage/v1{signed_url}"
+    except StorageError:
+        raise
+    except Exception as exc:
+        raise StorageError(f"create URL for {bucket}/{path} failed: {exc}") from exc
