@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
@@ -13,6 +14,8 @@ from database.models import Section, State
 from .research import index_sources, retrieve_sources, search_sources
 
 load_dotenv()
+
+log = logging.getLogger("aiagent")
 
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold
