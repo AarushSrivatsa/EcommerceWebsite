@@ -10,71 +10,53 @@ const onProjects = computed(() => route.name === 'projects' || route.name === 'p
 </script>
 
 <template>
-  <div class="app-shell">
-    <aside class="app-sidebar" aria-label="Main navigation">
-      <RouterLink to="/" class="brand-lockup">
-        <span class="brand-mark"><AppIcon name="film" :size="19" /></span>
-        <span class="brand-copy">
-          <strong>Script to Video</strong>
-          <small>VIDEO STUDIO</small>
-        </span>
+  <div class="studio-shell">
+    <aside class="studio-sidebar" aria-label="Main navigation">
+      <RouterLink to="/" class="studio-brand">
+        <span class="studio-brand-mark"><AppIcon name="film" :size="19" /></span>
+        <span><strong>Script to Video</strong><small>CREATOR STUDIO</small></span>
       </RouterLink>
 
-      <div class="sidebar-label">WORKSPACE</div>
-      <nav class="sidebar-nav">
-        <RouterLink to="/" class="nav-link" :class="{ 'nav-link-active': onProjects }">
-          <AppIcon name="folder" :size="18" />
-          <span>Projects</span>
+      <div class="studio-nav-label">WORKSPACE</div>
+      <nav class="studio-nav">
+        <RouterLink to="/" class="studio-nav-link" :class="{ active: onProjects }">
+          <AppIcon name="folder" :size="18" /><span>Projects</span>
         </RouterLink>
-        <RouterLink to="/youtube" class="nav-link" :class="{ 'nav-link-active': route.name === 'youtube' }">
-          <AppIcon name="upload" :size="18" />
-          <span>YouTube channels</span>
+        <RouterLink to="/youtube" class="studio-nav-link" :class="{ active: route.name === 'youtube' }">
+          <AppIcon name="upload" :size="18" /><span>YouTube channels</span>
         </RouterLink>
       </nav>
 
-      <RouterLink to="/new" class="sidebar-create">
-        <AppIcon name="sparkles" :size="17" />
-        <span>Start a new video</span>
+      <RouterLink to="/new" class="studio-new-project">
+        <span><AppIcon name="plus" :size="17" /></span>
+        <span><strong>New video</strong><small>Start with an idea</small></span>
         <AppIcon name="arrow-right" :size="16" />
       </RouterLink>
 
-      <div class="sidebar-foot">
-        <span class="sidebar-foot-icon"><AppIcon name="wand" :size="17" /></span>
-        <div>
-          <strong>Your creative space</strong>
-          <p>From a simple idea to a finished video.</p>
-        </div>
+      <div class="studio-sidebar-bottom">
+        <span class="sidebar-bottom-icon"><AppIcon name="sparkles" :size="17" /></span>
+        <div><strong>Make something worth watching.</strong><p>Your ideas, scripts and videos in one place.</p></div>
       </div>
     </aside>
 
-    <div class="app-main">
-      <div class="mobile-bar">
-        <RouterLink to="/" class="brand-lockup">
-          <span class="brand-mark"><AppIcon name="film" :size="18" /></span>
-          <span class="brand-copy"><strong>Script to Video</strong></span>
-        </RouterLink>
-        <nav class="mobile-nav" aria-label="Main navigation">
-          <RouterLink to="/" :class="{ 'mobile-nav-active': onProjects }" aria-label="Projects"><AppIcon name="folder" /></RouterLink>
-          <RouterLink to="/new" :class="{ 'mobile-nav-active': route.name === 'new' }" aria-label="Create a video"><AppIcon name="plus" /></RouterLink>
-          <RouterLink to="/youtube" :class="{ 'mobile-nav-active': route.name === 'youtube' }" aria-label="YouTube channels"><AppIcon name="upload" /></RouterLink>
-        </nav>
-      </div>
-
-      <header class="app-topbar">
-        <div class="topbar-location">
-          <span>Studio</span>
-          <AppIcon name="chevron-right" :size="14" />
-          <strong>{{ pageTitle }}</strong>
-        </div>
+    <div class="studio-main">
+      <header class="studio-topbar">
+        <div class="studio-breadcrumb"><span>Studio</span><AppIcon name="chevron-right" :size="14" /><strong>{{ pageTitle }}</strong></div>
+        <RouterLink to="/new" class="topbar-new"><AppIcon name="plus" :size="15" /> Create video</RouterLink>
       </header>
 
-      <main class="app-content">
+      <main class="studio-content">
         <RouterView v-slot="{ Component }">
           <component :is="Component" />
         </RouterView>
       </main>
     </div>
 
+    <nav class="studio-mobile-nav" aria-label="Main navigation">
+      <RouterLink to="/" :class="{ active: onProjects }"><AppIcon name="folder" :size="19" /><span>Projects</span></RouterLink>
+      <RouterLink to="/new" :class="{ active: route.name === 'new' }"><AppIcon name="plus" :size="19" /><span>Create</span></RouterLink>
+      <RouterLink to="/youtube" :class="{ active: route.name === 'youtube' }"><AppIcon name="upload" :size="19" /><span>YouTube</span></RouterLink>
+    </nav>
     <ToastHost />
   </div>
 </template>
