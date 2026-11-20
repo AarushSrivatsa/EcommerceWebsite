@@ -109,6 +109,8 @@ async def set_visual_beat_image(
     """Attach one image to one narration paragraph/visual beat (zero-based index)."""
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
+    state = await deps.script_or_404(script_id)
+    deps.require_idle(state)
     section = await deps.section_or_404(script_id, position)
     plan = list(section.visual_plan or [])
     if beat_index < 0 or beat_index >= len(plan):
