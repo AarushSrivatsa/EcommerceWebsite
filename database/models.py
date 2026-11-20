@@ -129,6 +129,9 @@ class Section(Base):
     grounding_score: Mapped[float | None] = mapped_column(Float)
     grounding_feedback: Mapped[str | None] = mapped_column(Text)
 
+    render_mode: Mapped[str] = mapped_column(
+        Text, default="cinematic", server_default="cinematic"
+    )
     image_path: Mapped[str | None] = mapped_column(Text)
     audio_path: Mapped[str | None] = mapped_column(Text)
     video_path: Mapped[str | None] = mapped_column(Text)

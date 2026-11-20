@@ -23,3 +23,23 @@ Users can upload their own images per beat or let the code-rendered motion graph
 ## Runtime dependencies
 
 `skia-python`, `numpy`, `Pillow` and the system `ffmpeg` binary. No new environment variables or database migration are required.
+
+
+## Per-section output modes
+
+Every section can use one of two render modes:
+
+- **Single image** creates a 1920×1080, 30 fps still-image scene with the section narration. It uses the section image, or the first uploaded storyboard image as a fallback.
+- **Cinematic Skill** creates the existing 1280×720, 24 fps animated photo-board / typography scene. It can use individual beat photos, a shared section image, or procedural cards when no photo is provided.
+
+The selected mode is stored on the section record. Existing sections default to Cinematic Skill, so existing projects keep their previous behavior. Changing modes marks that section and the assembled film as needing a rebuild; it does not delete uploaded images.
+
+## Small-instance safeguards
+
+- Heavy model work is serialized through the shared memory lock.
+- FastEmbed uses one ONNX thread and bounded embedding batches.
+- Supabase media downloads stream to disk rather than buffering entire MP4 files in the API process.
+- User images are validated as actual image files and limited to 16 megapixels before upload.
+- The health endpoint and memory log lines report process RSS plus cgroup container usage/limit/peak where the host exposes those metrics.
+
+These measures reduce avoidable memory spikes; they are not a guarantee that every workload fits in 512 MB. Confirm peaks in Render's Metrics view using representative projects.

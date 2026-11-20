@@ -2,6 +2,7 @@
 import asyncio
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -26,6 +27,7 @@ class SectionOut(BaseModel):
     audio_url: str | None
     video_url: str | None
     video_status: str
+    render_mode: str
     video_error: str | None
     updated_at: datetime | None
     sources: list[dict] = Field(default_factory=list)
@@ -63,6 +65,7 @@ async def section_out(section: Section) -> SectionOut:
         audio_url=audio_url,
         video_url=video_url,
         video_status=section.video_status,
+        render_mode=getattr(section, "render_mode", "cinematic") or "cinematic",
         video_error=section.video_error,
         updated_at=section.updated_at,
         sources=section.sources or [],
@@ -175,6 +178,7 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
     from aiagent.nodes import embed, suggest_image_prompt, similarity_limit
 
     state = await deps.script_or_404(script_id)
+    deps.require_idle(state)
     existing_section = await deps.section_or_404(script_id, position)
     old_beat_paths = [beat.get("image_path") for beat in (existing_section.visual_plan or []) if beat.get("image_path")]
     text = body.text.strip()
@@ -228,6 +232,53 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
         raise HTTPException(404, f"section {position} not found")
     await storage.delete_quiet(IMAGES_BUCKET, old_beat_paths)
     return await section_out(section)
+
+
+class RenderModeUpdate(BaseModel):
+    render_mode: Literal["image", "cinematic"]
+
+
+@router.patch("/{position}/render-mode", response_model=SectionOut)
+async def update_render_mode(script_id: uuid.UUID, position: int, body: RenderModeUpdate):
+    """Choose the legacy single-still scene or the Cinematic Skill renderer."""
+    state = await deps.script_or_404(script_id)
+    deps.require_idle(state)
+    section = await deps.section_or_404(script_id, position)
+    if section.video_status == "processing":
+        raise HTTPException(409, "wait for the current scene render to finish before changing modes")
+    if section.render_mode == body.render_mode:
+        return await section_out(section)
+
+    async with SessionLocal() as session:
+        changed = (
+            await session.execute(
+                update(Section)
+                .where(
+                    Section.id == section.id,
+                    Section.content_rev == section.content_rev,
+                )
+                .values(
+                    render_mode=body.render_mode,
+                    content_rev=Section.content_rev + 1,
+                    video_status="pending",
+                    video_error=None,
+                )
+                .returning(Section.id)
+            )
+        ).scalar_one_or_none()
+        if changed is None:
+            raise HTTPException(409, "the section changed; refresh and try again")
+        await session.execute(
+            update(State)
+            .where(State.id == script_id, State.final_video_status == "ready")
+            .values(final_video_status="outdated")
+        )
+        await session.commit()
+        updated = await session.get(Section, section.id)
+
+    if updated is None:
+        raise HTTPException(404, f"section {position} not found")
+    return await section_out(updated)
 
 
 class RewriteIn(BaseModel):

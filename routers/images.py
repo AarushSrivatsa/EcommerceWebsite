@@ -12,6 +12,7 @@ from config import IMAGES_BUCKET
 from database.initialization import SessionLocal
 from database.models import Section, State
 from routers.sections import SectionOut, section_out
+from media.image_validation import validate_image_bytes
 
 router = APIRouter(prefix="/scripts/{script_id}/sections/{position}/image", tags=["images"])
 
@@ -25,7 +26,12 @@ async def set_section_image(
     position: int,
     file: UploadFile = File(...),
 ):
+    state = await deps.script_or_404(script_id)
+    deps.require_idle(state)
     section = await deps.section_or_404(script_id, position)
+    if section.video_status == "processing":
+        raise HTTPException(409, "wait for the current scene render to finish before changing images")
+    revision = section.content_rev
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in IMAGE_EXTENSIONS:
         raise HTTPException(415, f"use one of: {', '.join(sorted(IMAGE_EXTENSIONS))}")
@@ -35,6 +41,10 @@ async def set_section_image(
         raise HTTPException(413, f"image is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB")
     if not data:
         raise HTTPException(422, "empty file")
+    try:
+        validate_image_bytes(data, suffix)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
     path = f"{script_id}/{section.id}-{uuid.uuid4().hex[:8]}{suffix}"
     await storage.upload_bytes(
@@ -44,59 +54,81 @@ async def set_section_image(
         mimetypes.guess_type(path)[0] or "application/octet-stream",
     )
 
+    old_path = None
+    updated = None
+    conflict = None
     async with SessionLocal() as session:
-        await session.execute(
-            update(Section)
-            .where(Section.id == section.id)
-            .values(
-                image_path=path,
-                content_rev=Section.content_rev + 1,
-                video_status="pending",
-                video_error=None,
-            )
-        )
-        await session.execute(
-            update(State)
-            .where(State.id == script_id, State.final_video_status == "ready")
-            .values(final_video_status="outdated")
-        )
-        await session.commit()
-        updated = await session.get(Section, section.id)
+        async with session.begin():
+            current = (
+                await session.execute(
+                    select(Section).where(Section.id == section.id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if current is None:
+                conflict = (404, f"section {position} not found")
+            elif current.content_rev != revision:
+                conflict = (409, "the section changed during upload; refresh and try again")
+            else:
+                old_path = current.image_path
+                current.image_path = path
+                current.content_rev += 1
+                current.video_status = "pending"
+                current.video_error = None
+                await session.execute(
+                    update(State)
+                    .where(State.id == script_id, State.final_video_status == "ready")
+                    .values(final_video_status="outdated")
+                )
+                updated = current
 
-    if updated is None:
+    if conflict:
         await storage.delete_quiet(IMAGES_BUCKET, [path])
-        raise HTTPException(404, f"section {position} not found")
-
-    await storage.delete_quiet(IMAGES_BUCKET, [section.image_path])
+        raise HTTPException(*conflict)
+    if old_path:
+        await storage.delete_quiet(IMAGES_BUCKET, [old_path])
     return await section_out(updated)
 
 
 @router.delete("", response_model=SectionOut)
 async def remove_section_image(script_id: uuid.UUID, position: int):
+    state = await deps.script_or_404(script_id)
+    deps.require_idle(state)
     section = await deps.section_or_404(script_id, position)
+    if section.video_status == "processing":
+        raise HTTPException(409, "wait for the current scene render to finish before changing images")
+    revision = section.content_rev
+    old_path = None
+    updated = None
+    conflict = None
 
     async with SessionLocal() as session:
-        await session.execute(
-            update(Section)
-            .where(Section.id == section.id)
-            .values(
-                image_path=None,
-                content_rev=Section.content_rev + 1,
-                video_status="pending",
-                video_error=None,
-            )
-        )
-        await session.execute(
-            update(State)
-            .where(State.id == script_id, State.final_video_status == "ready")
-            .values(final_video_status="outdated")
-        )
-        await session.commit()
-        updated = await session.get(Section, section.id)
+        async with session.begin():
+            current = (
+                await session.execute(
+                    select(Section).where(Section.id == section.id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if current is None:
+                conflict = (404, f"section {position} not found")
+            elif current.content_rev != revision:
+                conflict = (409, "the section changed; refresh and try again")
+            else:
+                old_path = current.image_path
+                current.image_path = None
+                current.content_rev += 1
+                current.video_status = "pending"
+                current.video_error = None
+                await session.execute(
+                    update(State)
+                    .where(State.id == script_id, State.final_video_status == "ready")
+                    .values(final_video_status="outdated")
+                )
+                updated = current
 
-    await storage.delete_quiet(IMAGES_BUCKET, [section.image_path])
+    if conflict:
+        raise HTTPException(*conflict)
+    await storage.delete_quiet(IMAGES_BUCKET, [old_path])
     return await section_out(updated)
-
 
 
 @router.put("/beats/{beat_index}", response_model=SectionOut)
@@ -110,6 +142,9 @@ async def set_visual_beat_image(
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
     section = await deps.section_or_404(script_id, position)
+    if section.video_status == "processing":
+        raise HTTPException(409, "wait for the current scene render to finish before changing images")
+    revision = section.content_rev
     plan = list(section.visual_plan or [])
     if beat_index < 0 or beat_index >= len(plan):
         raise HTTPException(422, f"visual beat index must be between 0 and {len(plan) - 1}")
@@ -122,6 +157,10 @@ async def set_visual_beat_image(
         raise HTTPException(413, f"image is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB")
     if not data:
         raise HTTPException(422, "empty file")
+    try:
+        validate_image_bytes(data, suffix)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
     path = f"{script_id}/{section.id}-beat-{beat_index}-{uuid.uuid4().hex[:8]}{suffix}"
     await storage.upload_bytes(
@@ -131,41 +170,46 @@ async def set_visual_beat_image(
         mimetypes.guess_type(path)[0] or "application/octet-stream",
     )
 
-    old_path = None
+    replaced_path = None
+    updated = None
+    conflict = None
     async with SessionLocal() as session:
         async with session.begin():
             current = (
                 await session.execute(
-                    select(Section)
-                    .where(Section.id == section.id)
-                    .with_for_update()
+                    select(Section).where(Section.id == section.id).with_for_update()
                 )
             ).scalar_one_or_none()
             if current is None:
-                await storage.delete_quiet(IMAGES_BUCKET, [path])
-                raise HTTPException(404, f"section {position} not found")
-            current_plan = list(current.visual_plan or [])
-            if beat_index >= len(current_plan):
-                await storage.delete_quiet(IMAGES_BUCKET, [path])
-                raise HTTPException(409, "the visual plan changed; refresh the section and try again")
-            replaced_path = current_plan[beat_index].get("image_path")
-            current_plan[beat_index] = {**current_plan[beat_index], "image_path": path}
-            current.visual_plan = current_plan
-            current.content_rev += 1
-            current.video_status = "pending"
-            current.video_error = None
+                conflict = (404, f"section {position} not found")
+            elif current.content_rev != revision:
+                conflict = (409, "the section changed during upload; refresh and try again")
+            else:
+                current_plan = list(current.visual_plan or [])
+                if beat_index >= len(current_plan):
+                    conflict = (409, "the visual plan changed; refresh and try again")
+                else:
+                    replaced_path = current_plan[beat_index].get("image_path")
+                    current_plan[beat_index] = {
+                        **current_plan[beat_index],
+                        "image_path": path,
+                    }
+                    current.visual_plan = current_plan
+                    current.content_rev += 1
+                    current.video_status = "pending"
+                    current.video_error = None
+                    await session.execute(
+                        update(State)
+                        .where(State.id == script_id, State.final_video_status == "ready")
+                        .values(final_video_status="outdated")
+                    )
+                    updated = current
 
-            await session.execute(
-                update(State)
-                .where(State.id == script_id, State.final_video_status == "ready")
-                .values(final_video_status="outdated")
-            )
-        updated = await session.get(Section, section.id)
-
-    if replaced_path and replaced_path != path:
+    if conflict:
+        await storage.delete_quiet(IMAGES_BUCKET, [path])
+        raise HTTPException(*conflict)
+    if replaced_path:
         await storage.delete_quiet(IMAGES_BUCKET, [replaced_path])
-    if updated is None:
-        raise HTTPException(404, f"section {position} not found")
     return await section_out(updated)
 
 
@@ -179,42 +223,50 @@ async def remove_visual_beat_image(
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
     section = await deps.section_or_404(script_id, position)
+    if section.video_status == "processing":
+        raise HTTPException(409, "wait for the current scene render to finish before changing images")
+    revision = section.content_rev
     plan = list(section.visual_plan or [])
     if beat_index < 0 or beat_index >= len(plan):
         raise HTTPException(422, f"visual beat index must be between 0 and {len(plan) - 1}")
 
     old_path = None
+    updated = None
+    conflict = None
     async with SessionLocal() as session:
         async with session.begin():
             current = (
                 await session.execute(
-                    select(Section)
-                    .where(Section.id == section.id)
-                    .with_for_update()
+                    select(Section).where(Section.id == section.id).with_for_update()
                 )
             ).scalar_one_or_none()
             if current is None:
-                raise HTTPException(404, f"section {position} not found")
-            current_plan = list(current.visual_plan or [])
-            if beat_index >= len(current_plan):
-                raise HTTPException(409, "the visual plan changed; refresh the section and try again")
-            old_path = current_plan[beat_index].get("image_path")
-            current_plan[beat_index] = {
-                key: value for key, value in current_plan[beat_index].items()
-                if key not in {"image_path", "image_url"}
-            }
-            current.visual_plan = current_plan
-            current.content_rev += 1
-            current.video_status = "pending"
-            current.video_error = None
-            await session.execute(
-                update(State)
-                .where(State.id == script_id, State.final_video_status == "ready")
-                .values(final_video_status="outdated")
-            )
-        updated = await session.get(Section, section.id)
+                conflict = (404, f"section {position} not found")
+            elif current.content_rev != revision:
+                conflict = (409, "the section changed; refresh and try again")
+            else:
+                current_plan = list(current.visual_plan or [])
+                if beat_index >= len(current_plan):
+                    conflict = (409, "the visual plan changed; refresh the section and try again")
+                else:
+                    old_path = current_plan[beat_index].get("image_path")
+                    current_plan[beat_index] = {
+                        key: value
+                        for key, value in current_plan[beat_index].items()
+                        if key not in {"image_path", "image_url"}
+                    }
+                    current.visual_plan = current_plan
+                    current.content_rev += 1
+                    current.video_status = "pending"
+                    current.video_error = None
+                    await session.execute(
+                        update(State)
+                        .where(State.id == script_id, State.final_video_status == "ready")
+                        .values(final_video_status="outdated")
+                    )
+                    updated = current
 
+    if conflict:
+        raise HTTPException(*conflict)
     await storage.delete_quiet(IMAGES_BUCKET, [old_path])
-    if updated is None:
-        raise HTTPException(404, f"section {position} not found")
     return await section_out(updated)

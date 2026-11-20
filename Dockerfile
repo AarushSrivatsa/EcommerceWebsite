@@ -25,7 +25,14 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    TOKENIZERS_PARALLELISM=false \
+    MALLOC_ARENA_MAX=2
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
@@ -42,5 +49,5 @@ RUN python -c "import ptts; ptts.TTS('hf://gradium/phonon-31m-en', lang='en', qu
 COPY . .
 COPY --from=site /site/dist frontend/dist
 
-# One worker on purpose: the graph runs and renders are background tasks inside this one process.
+# One API worker keeps model memory and in-process job coordination bounded on 512 MB.
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]

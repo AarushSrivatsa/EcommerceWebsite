@@ -2,7 +2,7 @@ services:
   - type: web
     name: script-to-video
     runtime: docker
-    plan: starter                  # 512 MB: the app is built to fit (peak about 450 MB while rendering). Free also has 512 MB but sleeps when idle and kills running jobs
+    plan: starter                  # 512 MB target; check container_memory logs and Render service metrics under real workloads
     healthCheckPath: /health
     envVars:
       - key: GROQ_API_KEY

@@ -10,6 +10,7 @@ import math
 import re
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 from types import SimpleNamespace
@@ -70,6 +71,7 @@ def _prepare_photos(
     image_paths: list[Path | None],
 ) -> tuple[list[str | None], dict[str, dict[str, int]]]:
     from PIL import Image
+    from media.image_validation import MAX_IMAGE_PIXELS
 
     photo_dir = prep / "photos"
     photo_dir.mkdir(parents=True, exist_ok=True)
@@ -84,10 +86,14 @@ def _prepare_photos(
         key = f"beat_{index:03d}"
         destination = photo_dir / f"{key}.jpg"
         with Image.open(source) as original:
+            if original.width * original.height > MAX_IMAGE_PIXELS:
+                raise ValueError(
+                    f"image {Path(source).name} exceeds the {MAX_IMAGE_PIXELS:,}-pixel safety limit"
+                )
             image = original.convert("RGB")
             resampling = getattr(Image, "Resampling", Image).LANCZOS
             image.thumbnail((2200, 1600), resampling)
-            image.save(destination, "JPEG", quality=88, optimize=True)
+            image.save(destination, "JPEG", quality=90, optimize=True)
             metadata[key] = {"w": image.width, "h": image.height}
         photo_keys.append(key)
 
@@ -286,22 +292,31 @@ def _render_cinematic_video_in_process(
         "-c:a", "aac", "-b:a", "128k", "-shortest",
         "-movflags", "+faststart", str(output_path),
     ]
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    try:
-        assert process.stdin is not None
-        for frame_number in range(frame_count):
-            process.stdin.write(renderer.frame(frame_number).tobytes())
-        process.stdin.close()
-        stderr = process.stderr.read() if process.stderr else b""
-        return_code = process.wait()
-    except Exception:
-        process.kill()
-        process.wait()
-        raise
+    # Use a file-backed stderr stream: a PIPE can fill while raw frames are being
+    # written to stdin, deadlocking FFmpeg and the renderer.
+    with tempfile.TemporaryFile() as stderr_file:
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=stderr_file)
+        try:
+            assert process.stdin is not None
+            for frame_number in range(frame_count):
+                process.stdin.write(renderer.frame(frame_number).tobytes())
+            process.stdin.close()
+            return_code = process.wait()
+        except Exception:
+            process.kill()
+            process.wait()
+            stderr_file.seek(0, 2)
+            stderr_file.seek(max(0, stderr_file.tell() - 1200))
+            message = stderr_file.read().decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"cinematic FFmpeg process stopped while receiving frames: {message}"
+            ) from None
 
-    if return_code:
-        message = stderr.decode("utf-8", errors="replace").strip()[-1200:]
-        raise RuntimeError(f"cinematic FFmpeg render failed: {message}")
+        if return_code:
+            stderr_file.seek(0, 2)
+            stderr_file.seek(max(0, stderr_file.tell() - 1200))
+            message = stderr_file.read().decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"cinematic FFmpeg render failed: {message}")
     return output_path
 
 

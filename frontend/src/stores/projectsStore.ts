@@ -126,6 +126,11 @@ export const projectsStore = {
     await this.refreshProject(id)
   },
 
+  async setSectionRenderMode(id: string, position: number, renderMode: Parameters<typeof service.setSectionRenderMode>[2]) {
+    setSection(id, await service.setSectionRenderMode(id, position, renderMode))
+    await this.refreshProject(id)
+  },
+
   async rerenderSection(id: string, position: number) {
     setSection(id, await service.rerenderSection(id, position))
   },

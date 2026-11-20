@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -15,7 +16,7 @@ import database.storage as storage
 from config import OUTPUT_DIR, IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 from database.initialization import SessionLocal
 from database.models import Section, State
-from media.voice import DEFAULT_VOICE, generate_voiceover
+from media.voice import DEFAULT_VOICE, build_image_video, generate_voiceover
 from media.cinematic_renderer import render_cinematic_video
 
 log = logging.getLogger("video_service")
@@ -111,31 +112,51 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                 if paragraph.strip()
             ]
             paragraph_count = max(1, len(paragraphs))
-            use_beats = bool(visual_plan) and len(visual_plan) == paragraph_count
+            render_mode = getattr(section, "render_mode", "cinematic") or "cinematic"
 
-            # Download optional user photos. Missing photos are intentional: the cinematic
-            # renderer builds animated cards and typography instead of falling back to a still.
-            beat_images: list[Path | None] = []
-            if use_beats:
-                for index, beat in enumerate(visual_plan):
-                    image_path = beat.get("image_path") or section.image_path
-                    if image_path:
-                        beat_images.append(await storage.download_to(
-                            IMAGES_BUCKET,
-                            image_path,
-                            folder / f"beat-{index}{Path(image_path).suffix}",
-                        ))
-                    else:
-                        beat_images.append(None)
-            else:
-                section_image = None
-                if section.image_path:
-                    section_image = await storage.download_to(
-                        IMAGES_BUCKET,
-                        section.image_path,
-                        folder / f"section-image{Path(section.image_path).suffix}",
+            single_image = None
+            if render_mode == "image":
+                image_path = section.image_path or next(
+                    (beat.get("image_path") for beat in visual_plan if beat.get("image_path")),
+                    None,
+                )
+                if not image_path:
+                    raise RuntimeError(
+                        "Single image mode needs one scene image. Upload a section image, "
+                        "or upload at least one storyboard image."
                     )
-                beat_images = [section_image] * paragraph_count
+                single_image = await storage.download_to(
+                    IMAGES_BUCKET,
+                    image_path,
+                    folder / f"single-image{Path(image_path).suffix}",
+                )
+                beat_images: list[Path | None] = []
+                use_beats = False
+            else:
+                use_beats = bool(visual_plan) and len(visual_plan) == paragraph_count
+                # Missing beat images are intentional: Cinematic Skill creates animated
+                # cards and typography for those beats rather than requiring a user photo.
+                beat_images = []
+                if use_beats:
+                    for index, beat in enumerate(visual_plan):
+                        image_path = beat.get("image_path") or section.image_path
+                        if image_path:
+                            beat_images.append(await storage.download_to(
+                                IMAGES_BUCKET,
+                                image_path,
+                                folder / f"beat-{index}{Path(image_path).suffix}",
+                            ))
+                        else:
+                            beat_images.append(None)
+                else:
+                    section_image = None
+                    if section.image_path:
+                        section_image = await storage.download_to(
+                            IMAGES_BUCKET,
+                            section.image_path,
+                            folder / f"section-image{Path(section.image_path).suffix}",
+                        )
+                    beat_images = [section_image] * paragraph_count
 
             async with memory.heavy:
                 memory.report(f"narration start (section {section.position})")
@@ -146,22 +167,32 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                     state.voice_model,
                     folder,
                 )
-                memory.report(f"cinematic render start (section {section.position})")
                 video = folder / "section.mp4"
-                await asyncio.to_thread(
-                    render_cinematic_video,
-                    story_text=section.text,
-                    audio_path=audio,
-                    output_path=video,
-                    duration_sec=voice_timing["duration_sec"],
-                    paragraph_durations=voice_timing["paragraph_durations_sec"],
-                    visual_plan=visual_plan if use_beats else [],
-                    image_paths=beat_images,
-                    project_title=state.user_prompt,
-                    section_position=section.position,
-                    video_type=state.video_type,
-                )
-                memory.report(f"cinematic render done (section {section.position})")
+                if render_mode == "image":
+                    memory.report(f"single-image FFmpeg render start (section {section.position})")
+                    await asyncio.to_thread(
+                        build_image_video,
+                        single_image,
+                        audio,
+                        video,
+                        voice_timing["duration_sec"],
+                    )
+                else:
+                    memory.report(f"Cinematic Skill render start (section {section.position})")
+                    await asyncio.to_thread(
+                        render_cinematic_video,
+                        story_text=section.text,
+                        audio_path=audio,
+                        output_path=video,
+                        duration_sec=voice_timing["duration_sec"],
+                        paragraph_durations=voice_timing["paragraph_durations_sec"],
+                        visual_plan=visual_plan if use_beats else [],
+                        image_paths=beat_images,
+                        project_title=state.user_prompt,
+                        section_position=section.position,
+                        video_type=state.video_type,
+                    )
+                memory.report(f"scene render done (section {section.position}, mode={render_mode})")
 
             audio_path = f"{state.id}/{section.id}-{revision}.mp3"
             video_path = f"{state.id}/{section.id}-{revision}.mp4"
@@ -209,18 +240,31 @@ _batch_tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
 
 
 async def _render_all_pending(script_id: uuid.UUID) -> None:
+    """Wait for in-flight scenes, then sequentially render every remaining section."""
     async with SessionLocal() as session:
-        sections = list((
+        section_ids = list((
             await session.execute(
-                select(Section)
+                select(Section.id)
                 .where(Section.state_id == script_id)
                 .order_by(Section.position)
             )
         ).scalars())
 
-    for section in sections:
-        if section.video_status != "ready":
-            await render_section_video(section.id)
+    for section_id in section_ids:
+        wait_started = time.monotonic()
+        while True:
+            async with SessionLocal() as session:
+                status = await session.scalar(
+                    select(Section.video_status).where(Section.id == section_id)
+                )
+            if status is None or status != "processing":
+                break
+            if time.monotonic() - wait_started > 3600:
+                raise TimeoutError(f"section render {section_id} remained processing for over one hour")
+            await asyncio.sleep(1)
+
+        if status != "ready":
+            await render_section_video(section_id)
 
 
 def _forget_batch_task(script_id: uuid.UUID, task: asyncio.Task[None]) -> None:

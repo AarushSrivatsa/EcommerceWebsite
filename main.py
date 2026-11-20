@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 import database.storage as storage
-from database.initialization import initialize_database
+from database.initialization import engine, initialize_database
 import deps
 import memory
 from aiagent.final_graph import build_graph
@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await storage.close()
+        await engine.dispose()
 
 
 app = FastAPI(title="Script to video", lifespan=lifespan)
@@ -47,7 +48,11 @@ app.add_middleware(
 @app.get("/health", include_in_schema=False)
 async def health():
     """For Render's health check."""
-    return {"status": "ok", "ram_mb": memory.rss_mb()}
+    return {
+        "status": "ok",
+        "ram_mb": memory.rss_mb(),
+        "container_memory": memory.container_memory(),
+    }
 
 
 app.include_router(scripts.router)

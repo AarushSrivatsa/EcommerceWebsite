@@ -109,9 +109,9 @@ def similarity_limit(state: BaseState) -> float:
 # ── embeddings ────────────────────────────────────────────────────────────────
 def _embed_sync(text: str) -> list[float]:
     from fastembed import TextEmbedding                           # ONNX, no PyTorch
-    embedder = TextEmbedding(EMBEDDING_MODEL)
+    embedder = TextEmbedding(EMBEDDING_MODEL, threads=1)
     try:
-        vector = next(iter(embedder.embed([text]))).tolist()
+        vector = next(iter(embedder.embed([text], batch_size=1, parallel=None))).tolist()
         memory.report("embedder loaded")
         return vector
     finally:

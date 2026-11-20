@@ -4,6 +4,7 @@ export type VideoType = 'auto' | 'facts' | 'story'
 export type GenerationStatus = 'generating' | 'ready' | 'failed'
 export type FinalVideoStatus = 'none' | 'processing' | 'ready' | 'outdated' | 'failed'
 export type SectionVideoStatus = 'pending' | 'processing' | 'ready' | 'failed'
+export type SectionRenderMode = 'image' | 'cinematic'
 
 export interface Voice {
   id: string
@@ -35,6 +36,7 @@ export interface Section {
   imageUrl: string | null
   videoUrl: string | null
   videoStatus: SectionVideoStatus
+  renderMode: SectionRenderMode
   videoError: string | null
   sources: ResearchSource[]
   visualPlan: VisualBeat[]

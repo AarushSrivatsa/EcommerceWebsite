@@ -1,5 +1,5 @@
 // The only file that knows the backend's endpoints and snake_case response shapes.
-import type { FinalVideoStatus, GenerationStatus, NewProjectForm, Project, Section, SectionVideoStatus } from '@/types'
+import type { FinalVideoStatus, GenerationStatus, NewProjectForm, Project, Section, SectionRenderMode, SectionVideoStatus } from '@/types'
 import { api } from './api'
 
 // ---- raw backend shapes (routers/scripts.py, routers/sections.py) ----
@@ -37,6 +37,7 @@ interface SectionDto {
   audio_url: string | null
   video_url: string | null
   video_status: SectionVideoStatus
+  render_mode: SectionRenderMode
   video_error: string | null
   updated_at: string | null
   sources: { title: string; url: string; domain: string | null; excerpt: string; similarity: number }[]
@@ -93,6 +94,7 @@ function toSection(s: SectionDto): Section {
     imageUrl: s.image_url,
     videoUrl: s.video_url,
     videoStatus: s.video_status,
+    renderMode: s.render_mode ?? 'cinematic',
     videoError: s.video_error,
     sources: s.sources ?? [],
     visualPlan: (s.visual_plan ?? []).map((beat) => ({
@@ -184,6 +186,12 @@ export async function setVisualBeatImage(id: string, position: number, beatIndex
 
 export async function removeVisualBeatImage(id: string, position: number, beatIndex: number): Promise<Section> {
   return toSection(await api.delete<SectionDto>(`/scripts/${id}/sections/${position}/image/beats/${beatIndex}`))
+}
+
+export async function setSectionRenderMode(id: string, position: number, renderMode: SectionRenderMode): Promise<Section> {
+  return toSection(await api.patch<SectionDto>(`/scripts/${id}/sections/${position}/render-mode`, {
+    render_mode: renderMode,
+  }))
 }
 
 export async function rerenderSection(id: string, position: number): Promise<Section> {

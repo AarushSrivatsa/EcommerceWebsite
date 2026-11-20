@@ -57,9 +57,9 @@ async def search_sources(query: str) -> list[dict]:
 def _embed_sync(texts: list[str]) -> list[list[float]]:
     from fastembed import TextEmbedding
 
-    model = TextEmbedding(EMBEDDING_MODEL)
+    model = TextEmbedding(EMBEDDING_MODEL, threads=1)
     try:
-        vectors = [vector.tolist() for vector in model.embed(texts)]
+        vectors = [vector.tolist() for vector in model.embed(texts, batch_size=16, parallel=None)]
         memory.report("research embedder loaded")
         return vectors
     finally:

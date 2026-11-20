@@ -1,4 +1,5 @@
 """Phonon voice generation and still-image video rendering helpers."""
+from __future__ import annotations
 
 import os
 import re
@@ -6,8 +7,6 @@ import subprocess
 import wave
 from pathlib import Path
 
-import numpy as np
-import ptts
 
 import memory
 
@@ -70,6 +69,7 @@ def _load_phonon():
     global _PHONON
 
     if _PHONON is None:
+        import ptts
         _PHONON = ptts.TTS(
             MODEL_PATH,
             lang="en",
@@ -119,6 +119,7 @@ def _windows(text: str, limit: int = WINDOW_CHARS) -> list[str]:
 
 def _speak_piece(text: str, voice_model: str) -> np.ndarray:
     """Synthesize one short text piece with Phonon."""
+    import numpy as np
     audio = _load_phonon().synth(text, voice=voice_model)
     audio = np.asarray(audio, dtype=np.float32)
 
@@ -136,6 +137,7 @@ def _speak(
     duration_delta: float = 0.0,
 ) -> np.ndarray:
     """Speak one sentence, splitting unusually long sentences into smaller pieces."""
+    import numpy as np
     model = _load_phonon()
     model.set_conditions({"duration_delta": float(duration_delta)})
 
@@ -212,6 +214,7 @@ def _write_audio(
     sentence_silence: float,
     paragraph_silence: float,
 ) -> tuple[float, list[float]]:
+    import numpy as np
     duration_samples = 0
     paragraph_samples = []
 
@@ -376,6 +379,8 @@ def _build_video(
                 str(audio_path),
                 "-vf",
                 video_filter,
+                "-filter_threads",
+                "1",
                 "-r",
                 str(fps),
                 "-c:v",
@@ -403,6 +408,24 @@ def _build_video(
         )
     finally:
         list_path.unlink(missing_ok=True)
+
+
+def build_image_video(
+    image_path: Path,
+    audio_path: Path,
+    video_path: Path,
+    duration_sec: float,
+) -> None:
+    """Create the original single-still scene mode at the same 1080p/30fps quality."""
+    duration = max(0.1, float(duration_sec))
+    _build_video(
+        [Path(image_path)],
+        [duration],
+        Path(audio_path),
+        Path(video_path),
+        size=VIDEO_SIZE,
+        fps=VIDEO_FPS,
+    )
 
 
 def generate_voiceover(
