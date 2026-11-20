@@ -58,7 +58,7 @@ class SectionCreate(BaseModel):
 @router.post("", response_model=SectionOut, status_code=201)
 async def add_section(script_id: uuid.UUID, body: SectionCreate):
     """Add a section you wrote yourself (at the end, or at `position`, pushing the others down)."""
-    from nodes import embed, suggest_image_prompt
+    from aiagent.nodes import embed, suggest_image_prompt
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
     count = await db.count_sections(script_id)
