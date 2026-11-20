@@ -6,7 +6,7 @@ const props = defineProps<{ status: string }>()
 
 const map: Record<string, { label: string; tone: Tone; pulse?: boolean }> = {
   generating: { label: 'Writing', tone: 'info', pulse: true },
-  ready: { label: 'Script ready', tone: 'success' },
+  ready: { label: 'Ready', tone: 'success' },
   failed: { label: 'Needs attention', tone: 'danger' },
   none: { label: 'Not built', tone: 'neutral' },
   processing: { label: 'Building video', tone: 'info', pulse: true },
