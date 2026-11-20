@@ -123,7 +123,7 @@ async def url(bucket: str, path: str | None) -> str | None:
         bucket_api = client.storage.from_(bucket)
 
         if SUPABASE_BUCKETS_PUBLIC:
-            return bucket_api.get_public_url(path)
+            return await bucket_api.get_public_url(path)
 
         response = await bucket_api.create_signed_url(path, SIGNED_URL_SECONDS)
         signed_url = response.get("signedURL") or response.get("signedUrl")
