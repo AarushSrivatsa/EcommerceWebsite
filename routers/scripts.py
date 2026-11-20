@@ -186,6 +186,10 @@ async def delete_script(script_id: uuid.UUID):
     deps.require_idle(state)
 
     async with SessionLocal() as session:
+        current_state = await session.get(State, script_id)
+        if current_state is None:
+            raise HTTPException(404, "script not found")
+
         sections = list((
             await session.execute(
                 select(Section).where(Section.state_id == script_id)
@@ -196,10 +200,10 @@ async def delete_script(script_id: uuid.UUID):
             AUDIOS_BUCKET: [section.audio_path for section in sections if section.audio_path],
             VIDEOS_BUCKET: [section.video_path for section in sections if section.video_path],
         }
-        if state.final_video_path:
-            files[VIDEOS_BUCKET].append(state.final_video_path)
+        if current_state.final_video_path:
+            files[VIDEOS_BUCKET].append(current_state.final_video_path)
 
-        await session.delete(state)
+        await session.delete(current_state)
         await session.commit()
 
     for bucket, paths in files.items():
