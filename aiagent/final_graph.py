@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, START, END
 
 from .BaseState import BaseState
 from .edges import route_after_router
-from .nodes import router_node, writer_node, push_section_node
+from .nodes import research_node, router_node, writer_node, push_section_node
 
 
 def build_graph():
@@ -10,11 +10,13 @@ def build_graph():
     waiting to be rewritten. Everything about images, audio and video lives in the API, not here."""
 
     graph = StateGraph(BaseState)
+    graph.add_node("research", research_node)
     graph.add_node("router", router_node)
     graph.add_node("writer", writer_node)
     graph.add_node("push_section", push_section_node)
 
-    graph.add_edge(START, "router")
+    graph.add_edge(START, "research")
+    graph.add_edge("research", "router")
     graph.add_conditional_edges("router", route_after_router, ["writer", "push_section", END])
     graph.add_edge("writer", "router")            # the draft arrives already scored
     graph.add_edge("push_section", "router")      # after saving: next brief, next rewrite, or finish
