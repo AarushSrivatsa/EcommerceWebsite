@@ -456,6 +456,31 @@ MIGRATIONS = [   # create_all does not add columns to existing tables
     "ALTER TABLE states ADD COLUMN IF NOT EXISTS youtube_status TEXT NOT NULL DEFAULT 'none'",
     "ALTER TABLE states ADD COLUMN IF NOT EXISTS youtube_url TEXT",
     "ALTER TABLE states ADD COLUMN IF NOT EXISTS youtube_error TEXT",
+    # Older databases may already have this table but not the columns expected by YoutubeChannel.
+    "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()",
+    "UPDATE youtube_channels SET id = gen_random_uuid() WHERE id IS NULL",
+    "ALTER TABLE youtube_channels ALTER COLUMN id SET NOT NULL",
+    "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+    "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+    "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS credentials TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS is_selected BOOLEAN NOT NULL DEFAULT FALSE",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_youtube_channels_id ON youtube_channels (id)",
+    """
+    DO $migration$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'youtube_channels'
+              AND column_name = 'channel_name'
+        ) THEN
+            EXECUTE 'UPDATE youtube_channels SET name = channel_name '
+                    'WHERE name = '''' AND channel_name IS NOT NULL';
+        END IF;
+    END
+    $migration$
+    """,
 ]
 
 
