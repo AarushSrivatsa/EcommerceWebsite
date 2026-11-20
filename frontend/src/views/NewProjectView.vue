@@ -19,6 +19,7 @@ const form = reactive<NewProjectForm>({
   wordsPerMinute: 150,
   totalSections: null,
   voiceModel: 'Zoey',
+  similarityThreshold: null,
 })
 const autoSections = ref(true)
 const sectionCount = ref(6)
@@ -37,6 +38,11 @@ const typeHint: Record<VideoType, string> = {
 }
 
 const estimatedWords = computed(() => Math.round(form.estimatedDurationInMinutes * form.wordsPerMinute))
+const recommendedSimilarity = computed(() => form.videoType === 'story' ? 92 : 88)
+const similarityValue = computed({
+  get: () => form.similarityThreshold === null ? recommendedSimilarity.value : Math.round(form.similarityThreshold * 100),
+  set: (value: number) => { form.similarityThreshold = value / 100 },
+})
 const canSubmit = computed(() => form.userPrompt.trim().length >= 3 && !generating.value)
 
 async function submit() {
@@ -142,6 +148,33 @@ async function submit() {
             aria-label="Number of sections"
             class="section-count-input"
           />
+
+          <div class="similarity-setting">
+            <div class="range-card-heading">
+              <label for="similarity-threshold" class="field-label">Section similarity limit</label>
+              <strong>{{ similarityValue }}%</strong>
+            </div>
+            <input
+              id="similarity-threshold"
+              v-model.number="similarityValue"
+              type="range"
+              min="60"
+              max="100"
+              step="1"
+              class="range-input"
+            />
+            <div class="range-ends"><span>Stricter</span><span>More permissive</span></div>
+            <p class="field-hint">
+              A section at or above this similarity to an earlier section is rewritten. Lower values prevent more repetition.
+              Recommended: {{ recommendedSimilarity }}% for this format.
+            </p>
+            <button
+              v-if="form.similarityThreshold !== null"
+              type="button"
+              class="text-action similarity-reset"
+              @click="form.similarityThreshold = null"
+            >Use recommended {{ recommendedSimilarity }}%</button>
+          </div>
         </section>
 
         <section class="editor-panel">
@@ -185,6 +218,7 @@ async function submit() {
             <div><span>Words</span><strong>{{ estimatedWords.toLocaleString() }} approx.</strong></div>
             <div><span>Sections</span><strong>{{ autoSections ? 'Automatic' : sectionCount }}</strong></div>
             <div><span>Narrator</span><strong>{{ voices.find((v) => v.id === form.voiceModel)?.label ?? form.voiceModel }}</strong></div>
+            <div><span>Similarity limit</span><strong>{{ similarityValue }}%</strong></div>
           </div>
           <div class="summary-divider"></div>
           <p class="summary-caption">How it works</p>
