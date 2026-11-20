@@ -50,6 +50,12 @@ const filters: { value: Filter; label: string }[] = [
   { value: 'failed', label: 'Failed' },
 ]
 
+const stats = computed(() => ({
+  total: projectsStore.projects.value.length,
+  generating: projectsStore.projects.value.filter((p) => p.generationStatus === 'generating').length,
+  ready: projectsStore.projects.value.filter((p) => p.generationStatus === 'ready').length,
+}))
+
 const visible = computed(() =>
   projectsStore.projects.value.filter(
     (p) =>
@@ -76,66 +82,76 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div class="fade-up">
-    <div class="flex flex-wrap items-end justify-between gap-4">
+  <div class="fade-up projects-page">
+    <div class="projects-intro">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Projects</h1>
-        <p class="mt-1 text-sm text-zinc-400">Every script you’ve turned (or are turning) into a video.</p>
+        <p class="eyebrow">YOUR WORKSPACE</p>
+        <h1 class="page-title mt-3">Your next video starts here.</h1>
+        <p class="page-subtitle mt-2">Keep your ideas, scripts and finished videos organised in one place.</p>
       </div>
-      <RouterLink
-        to="/new"
-        class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-600/25 transition hover:brightness-110"
-      >
-        <AppIcon name="plus" /> New project
+      <RouterLink to="/new" class="primary-action">
+        <AppIcon name="plus" :size="17" /> Create a video
       </RouterLink>
     </div>
 
-    <div class="mt-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <div class="overflow-x-auto"><SegmentedControl v-model="filter" :options="filters" aria-label="Filter projects" /></div>
-      <label class="relative block md:w-72">
-        <span class="sr-only">Search projects</span>
-        <AppIcon name="search" :size="16" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-        <input
-          v-model="query"
-          type="search"
-          placeholder="Search projects…"
-          class="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-zinc-500 focus:border-brand-400/60 focus:outline-none"
-        />
-      </label>
+    <div class="project-stats">
+      <div class="project-stat">
+        <span class="project-stat-icon"><AppIcon name="folder" :size="18" /></span>
+        <div><span class="project-stat-label">All projects</span><strong>{{ stats.total }}</strong></div>
+      </div>
+      <div class="project-stat">
+        <span class="project-stat-icon stat-icon-live"><AppIcon name="clock" :size="18" /></span>
+        <div><span class="project-stat-label">In progress</span><strong>{{ stats.generating }}</strong></div>
+      </div>
+      <div class="project-stat">
+        <span class="project-stat-icon stat-icon-ready"><AppIcon name="check" :size="18" /></span>
+        <div><span class="project-stat-label">Scripts ready</span><strong>{{ stats.ready }}</strong></div>
+      </div>
     </div>
 
-    <div v-if="loading" class="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3" aria-busy="true">
-      <div v-for="n in 3" :key="n" class="shimmer h-72 rounded-2xl border border-white/8 bg-ink-850/70" />
+    <div class="projects-toolbar">
+      <div>
+        <h2 class="section-heading">Projects</h2>
+        <p class="section-description">Pick up where you left off.</p>
+      </div>
+      <div class="projects-tools">
+        <div class="overflow-x-auto"><SegmentedControl v-model="filter" :options="filters" aria-label="Filter projects" /></div>
+        <label class="search-field">
+          <span class="sr-only">Search projects</span>
+          <AppIcon name="search" :size="16" />
+          <input v-model="query" type="search" placeholder="Search projects…" />
+        </label>
+      </div>
     </div>
 
-    <div v-else-if="loadError" class="mt-10 rounded-2xl border border-rose-500/20 bg-rose-500/[0.04] px-6 py-12 text-center">
-      <div class="mx-auto grid size-12 place-items-center rounded-xl bg-rose-500/10 text-rose-300"><AppIcon name="alert" :size="22" /></div>
-      <h2 class="mt-4 text-base font-semibold text-white">Couldn’t load projects</h2>
-      <p class="mx-auto mt-1 max-w-md text-sm text-zinc-400">{{ loadError }}</p>
-      <button class="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500" @click="load">
-        <AppIcon name="refresh" /> Try again
-      </button>
+    <div v-if="loading" class="project-grid" aria-busy="true">
+      <div v-for="n in 3" :key="n" class="shimmer loading-project-card" />
     </div>
 
-    <div v-else-if="visible.length" class="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+    <div v-else-if="loadError" class="empty-state error-state">
+      <div class="empty-state-icon error-state-icon"><AppIcon name="alert" :size="23" /></div>
+      <h2>We couldn’t load your projects</h2>
+      <p>{{ loadError }}</p>
+      <button class="primary-action mt-5" @click="load"><AppIcon name="refresh" /> Try again</button>
+    </div>
+
+    <div v-else-if="visible.length" class="project-grid">
       <ProjectCard v-for="p in visible" :key="p.id" :project="p" @open="open(p)" @remove="toDelete = p" />
     </div>
 
-    <div v-else class="mt-10 rounded-2xl border border-dashed border-white/10 px-6 py-16 text-center">
-      <div class="mx-auto grid size-12 place-items-center rounded-xl bg-white/5 text-zinc-400"><AppIcon name="film" :size="22" /></div>
-      <h2 class="mt-4 text-base font-semibold text-white">{{ projectsStore.projects.value.length ? 'No projects match' : 'No projects yet' }}</h2>
-      <p class="mx-auto mt-1 max-w-sm text-sm text-zinc-400">
-        {{ projectsStore.projects.value.length ? 'Try a different filter or search term.' : 'Describe an idea and we’ll write the story for you.' }}
-      </p>
-      <RouterLink to="/new" class="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500">
-        <AppIcon name="plus" /> New project
+    <div v-else class="empty-state">
+      <div class="empty-state-icon"><AppIcon name="film" :size="23" /></div>
+      <h2>{{ projectsStore.projects.value.length ? 'Nothing found' : 'Your studio is ready' }}</h2>
+      <p>{{ projectsStore.projects.value.length ? 'Try another search or switch the status filter.' : 'Start with an idea. We’ll help turn it into a script you can edit and bring to life.' }}</p>
+      <RouterLink v-if="!projectsStore.projects.value.length" to="/new" class="primary-action mt-5">
+        <AppIcon name="sparkles" /> Create your first video
       </RouterLink>
     </div>
 
     <ConfirmModal
       v-if="toDelete"
       title="Delete this project?"
-      :message="`“${toDelete.userPrompt}”, its sections and its videos will be permanently deleted.`"
+      :message="\`“\${toDelete.userPrompt}”, its sections and its videos will be permanently deleted.\`"
       confirm-label="Delete"
       danger
       @confirm="confirmDelete"
