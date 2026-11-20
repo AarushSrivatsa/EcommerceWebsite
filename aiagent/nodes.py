@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
@@ -301,7 +302,7 @@ async def verify_section_grounding(text: str, sources: list[dict]) -> tuple[floa
 
 async def make_visual_plan(text: str) -> list[dict]:
     """Create one visual hero per spoken paragraph, following the cinematic-skill beat discipline."""
-    paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text.strip()) if part.strip()]
     if not paragraphs:
         return []
     try:
