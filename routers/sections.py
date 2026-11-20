@@ -28,6 +28,12 @@ class SectionOut(BaseModel):
     video_status: str
     video_error: str | None
     updated_at: datetime | None
+    sources: list[dict] = []
+    visual_plan: list[dict] = []
+    similarity_score: float | None = None
+    similarity_threshold: float | None = None
+    grounding_score: float | None = None
+    grounding_feedback: str | None = None
 
 
 async def section_out(section: Section) -> SectionOut:
@@ -47,6 +53,12 @@ async def section_out(section: Section) -> SectionOut:
         video_status=section.video_status,
         video_error=section.video_error,
         updated_at=section.updated_at,
+        sources=section.sources or [],
+        visual_plan=section.visual_plan or [],
+        similarity_score=section.similarity_score,
+        similarity_threshold=section.similarity_threshold,
+        grounding_score=section.grounding_score,
+        grounding_feedback=section.grounding_feedback,
     )
 
 
@@ -76,7 +88,7 @@ class SectionCreate(BaseModel):
 
 @router.post("", response_model=SectionOut, status_code=201)
 async def add_section(script_id: uuid.UUID, body: SectionCreate):
-    from aiagent.nodes import embed, suggest_image_prompt
+    from aiagent.nodes import embed, suggest_image_prompt, similarity_limit
 
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
@@ -105,6 +117,10 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
             .values(position=-Section.position)
         )
 
+        distance = Section.embedding.cosine_distance(embedding)
+        nearest = await session.scalar(
+            select(func.min(distance)).where(Section.state_id == script_id)
+        )
         section = Section(
             state_id=script_id,
             position=position,
@@ -112,6 +128,10 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
             word_count=len(text.split()),
             embedding=embedding,
             image_prompt=image_prompt,
+            similarity_score=None if nearest is None else float(1 - nearest),
+            similarity_threshold=similarity_limit(deps.state_from_row(state)),
+            sources=[],
+            visual_plan=[],
             video_status="pending",
             content_rev=1,
         )
@@ -140,7 +160,7 @@ class SectionUpdate(BaseModel):
 
 @router.patch("/{position}", response_model=SectionOut)
 async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate):
-    from aiagent.nodes import embed, suggest_image_prompt
+    from aiagent.nodes import embed, suggest_image_prompt, similarity_limit
 
     await deps.section_or_404(script_id, position)
     text = body.text.strip()
@@ -157,6 +177,12 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
                 word_count=len(text.split()),
                 embedding=embedding,
                 image_prompt=image_prompt,
+                sources=[],
+                visual_plan=[],
+                similarity_score=None,
+                similarity_threshold=similarity_limit(deps.state_from_row(await deps.script_or_404(script_id))),
+                grounding_score=None,
+                grounding_feedback=None,
                 content_rev=Section.content_rev + 1,
                 video_status="pending",
                 video_error=None,
