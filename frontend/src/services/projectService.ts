@@ -18,7 +18,7 @@ interface ScriptDto {
   estimated_duration_in_hours: number
   total_sections: number | null
   sections_completed: number | null
-  generation_status: Exclude<GenerationStatus, 'draft'>
+  generation_status: GenerationStatus
   generation_error: string | null
   final_video: FinalVideoDto
   created_at: string | null
@@ -39,13 +39,24 @@ interface SectionDto {
 }
 
 // ---- mappers ----
+function toVoiceModel(value: string | null): string {
+  if (!value) return 'Zoey'
+
+  const legacyPrefixes = ['af_', 'am_', 'bf_', 'bm_']
+  if (legacyPrefixes.some((prefix) => value.startsWith(prefix)) || value.toLowerCase() === 'default' || value.toLowerCase() === 'en_us_zoey') {
+    return 'Zoey'
+  }
+
+  return value
+}
+
 function toProject(s: ScriptDto): Project {
   const now = new Date().toISOString()
   return {
     id: s.id,
     userPrompt: s.user_prompt,
-    videoType: (s.video_type ?? 'auto') as VideoType,
-    voiceModel: s.voice_model ?? 'af_heart',
+    videoType: s.video_type ?? 'auto',
+    voiceModel: toVoiceModel(s.voice_model),
     wordsPerMinute: s.words_per_minute,
     estimatedDurationInMinutes: Math.round(s.estimated_duration_in_hours * 60 * 10) / 10,
     totalSections: s.total_sections ?? 0,
