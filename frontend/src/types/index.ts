@@ -1,18 +1,29 @@
-// UI-side shapes (camelCase). The raw backend shapes live in src/services/projectService.ts
-// and are mapped here in one place.
+// UI-side shapes (camelCase). Raw API shapes are mapped in projectService.ts.
 
 export type VideoType = 'auto' | 'facts' | 'story'
-
 export type GenerationStatus = 'generating' | 'ready' | 'failed'
-
 export type FinalVideoStatus = 'none' | 'processing' | 'ready' | 'outdated' | 'failed'
-
 export type SectionVideoStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
 export interface Voice {
   id: string
   label: string
   accent: string
+}
+
+export interface ResearchSource {
+  title: string
+  url: string
+  domain: string | null
+  excerpt: string
+  similarity: number
+}
+
+export interface VisualBeat {
+  narration: string
+  visual: string
+  on_screen_text: string
+  camera: string
 }
 
 export interface Section {
@@ -24,6 +35,12 @@ export interface Section {
   videoUrl: string | null
   videoStatus: SectionVideoStatus
   videoError: string | null
+  sources: ResearchSource[]
+  visualPlan: VisualBeat[]
+  similarityScore: number | null
+  similarityThreshold: number | null
+  groundingScore: number | null
+  groundingFeedback: string | null
 }
 
 export interface Project {
@@ -32,6 +49,9 @@ export interface Project {
   videoType: VideoType
   voiceModel: string
   wordsPerMinute: number
+  similarityThreshold: number
+  researchStatus: 'pending' | 'ready' | 'unavailable'
+  researchError: string | null
   estimatedDurationInMinutes: number
   totalSections: number
   sectionsCompleted: number
@@ -44,12 +64,13 @@ export interface Project {
   updatedAt: string
 }
 
-/** Values collected by the "New project" form. */
+/** Values collected by the New project form. */
 export interface NewProjectForm {
   userPrompt: string
   videoType: VideoType
   estimatedDurationInMinutes: number
   wordsPerMinute: number
-  totalSections: number | null // null = let the model decide
+  totalSections: number | null
   voiceModel: string
+  similarityThreshold: number | null // null = automatic facts/story recommendation
 }
