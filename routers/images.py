@@ -67,6 +67,9 @@ async def set_section_image(
         await storage.delete_quiet(IMAGES_BUCKET, [path])
         raise HTTPException(404, f"section {position} not found")
 
+    if updated is None:
+        raise HTTPException(404, f"section {position} not found")
+
     await storage.delete_quiet(IMAGES_BUCKET, [section.image_path])
     return await section_out(updated)
 
