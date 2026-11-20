@@ -148,6 +148,31 @@ async function addSection(text: string) {
   }
 }
 
+async function uploadBeatImage(position: number, beatIndex: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+  if (!allowed.some((extension) => file.name.toLowerCase().endsWith(extension))) {
+    push(`Use one of: ${allowed.join(' ')}`, 'error', 5000)
+    return
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    push('Images must be 15 MB or smaller', 'error', 5000)
+    return
+  }
+  if (await run(() => projectsStore.setVisualBeatImage(id.value, position, beatIndex, file), `Beat ${beatIndex + 1} image saved`)) {
+    watchRender()
+  }
+}
+
+async function removeBeatImage(position: number, beatIndex: number) {
+  if (await run(() => projectsStore.removeVisualBeatImage(id.value, position, beatIndex), 'Beat image removed')) {
+    watchRender()
+  }
+}
+
 // ---- writing stopped half way (error, server restart): carry on where it stopped ----
 async function continueWriting() {
   if (await run(() => projectsStore.resumeGeneration(id.value))) watchRender()
@@ -193,11 +218,12 @@ const settingsChanged = computed(() => !!project.value && (
 ))
 
 async function saveSettings() {
-  const message = mediaSettingsChanged.value
+  const needsRerender = mediaSettingsChanged.value
+  const message = needsRerender
     ? 'Narration settings saved. Rebuild the scene videos to apply them.'
     : 'Similarity limit saved. It applies to future sections and AI rewrites.'
   if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value, similarity.value / 100), message)) {
-    if (mediaSettingsChanged.value) watchRender()
+    if (needsRerender) watchRender()
   }
 }
 
@@ -235,7 +261,11 @@ async function removeProject() {
     </div>
     <div v-else-if="writing" class="project-alert project-alert-info" role="status">
       <AppIcon name="loader" :size="17" class="animate-spin" />
-      <div><strong>Writing your script</strong><p>{{ project.sectionsCompleted }} of {{ project.totalSections || 'the planned' }} sections completed. New sections will appear below.</p></div>
+      <div>
+        <strong>{{ project.researchStatus === 'pending' ? 'Researching your topic' : 'Writing your script' }}</strong>
+        <p v-if="project.researchStatus === 'pending'">Finding useful sources and planning the sections before drafting begins.</p>
+        <p v-else>{{ project.sectionsCompleted }} of {{ project.totalSections || 'the planned' }} sections completed. New sections will appear below.</p>
+      </div>
     </div>
 
     <div v-if="project.researchStatus === 'unavailable' && project.researchError" class="project-alert project-alert-info">
@@ -290,6 +320,15 @@ async function removeProject() {
                   </div>
                   <p>{{ beat.visual }}</p>
                   <small v-if="beat.on_screen_text">On-screen text: {{ beat.on_screen_text }}</small>
+                  <img v-if="beat.image_url" :src="beat.image_url" :alt="`Visual for section ${s.position}, beat ${beatIndex + 1}`" class="visual-beat-image" loading="lazy" />
+                  <div class="visual-beat-actions">
+                    <label class="visual-beat-upload">
+                      <AppIcon name="upload" :size="13" />
+                      {{ beat.image_url ? 'Replace visual' : 'Add visual' }}
+                      <input type="file" accept=".jpg,.jpeg,.png,.webp,.bmp" @change="uploadBeatImage(s.position, beatIndex, $event)" />
+                    </label>
+                    <button v-if="beat.image_url" type="button" class="visual-beat-remove" @click="removeBeatImage(s.position, beatIndex)">Remove</button>
+                  </div>
                 </li>
               </ol>
             </details>
@@ -304,6 +343,12 @@ async function removeProject() {
                 rel="noopener noreferrer"
               >{{ source.title }}</a>
             </div>
+
+            <details v-if="s.groundingFeedback" class="grounding-notes">
+              <summary>Evidence review notes</summary>
+              <p>{{ s.groundingFeedback }}</p>
+              <small>The evidence check is an AI-assisted assessment, not a statistical guarantee of factual accuracy.</small>
+            </details>
             <p v-if="s.videoStatus === 'failed' && s.videoError" class="section-error">{{ s.videoError }}</p>
             <SectionImage :project-id="id" :section="s" @changed="watchRender" />
 
