@@ -23,7 +23,7 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
     class="project-card"
     tabindex="0"
     role="link"
-    :aria-label="\`Open project: \${project.userPrompt}\`"
+    :aria-label="'Open project: ' + project.userPrompt"
     @click="emit('open')"
     @keydown.enter="emit('open')"
     @keydown.space.prevent="emit('open')"
@@ -56,7 +56,7 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
           <div
             class="progress-fill"
             :class="{ 'progress-fill-failed': project.generationStatus === 'failed' }"
-            :style="{ width: \`\${percent}%\` }"
+            :style="{ width: percent + '%' }"
           />
         </div>
       </div>
