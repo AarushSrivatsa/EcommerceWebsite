@@ -210,7 +210,14 @@ async def delete_script(script_id: uuid.UUID):
             )
         ).scalars())
         files = {
-            IMAGES_BUCKET: [section.image_path for section in sections if section.image_path],
+            IMAGES_BUCKET: [
+                path
+                for section in sections
+                for path in [section.image_path, *[
+                    beat.get("image_path") for beat in (section.visual_plan or [])
+                ]]
+                if path
+            ],
             AUDIOS_BUCKET: [section.audio_path for section in sections if section.audio_path],
             VIDEOS_BUCKET: [section.video_path for section in sections if section.video_path],
         }
