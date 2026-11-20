@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 import deps
 import database.storage as storage
