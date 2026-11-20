@@ -74,40 +74,65 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
         return await asyncio.to_thread(_embed_sync, texts)
 
 
+def _split_into_chunks(text: str, size: int = 1100, overlap: int = 160) -> list[str]:
+    """Split search snippets into short overlapping passages without breaking words."""
+    clean = " ".join(text.split())
+    chunks = []
+    start = 0
+    while start < len(clean):
+        end = min(start + size, len(clean))
+        if end < len(clean):
+            boundary = clean.rfind(" ", start + size // 2, end)
+            if boundary > start:
+                end = boundary
+        chunk = clean[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(clean):
+            break
+        start = max(end - overlap, start + 1)
+    return chunks
+
+
 async def index_sources(state_id, sources: list[dict]) -> int:
-    """Embed and upsert unique source excerpts for one project."""
+    """Chunk, embed, and index source passages for one project."""
     unique = {}
     for source in sources:
         url = source.get("url")
-        text = source.get("content", "").strip()
-        if url and text:
+        content = source.get("content", "").strip()
+        if url and content:
             unique[url] = source
-    items = list(unique.values())
-    if not items:
+    if not unique:
         return 0
 
-    texts = [f"{item['title']}\n{item['content']}" for item in items]
+    passages = []
+    for source in unique.values():
+        for index, chunk in enumerate(_split_into_chunks(source["content"])):
+            passages.append((source, index, chunk))
+
+    texts = [f"{source['title']}\n{chunk}" for source, _, chunk in passages]
     vectors = await embed_texts(texts)
     values = [
         {
             "state_id": state_id,
-            "source_url": item["url"],
-            "source_title": item["title"],
-            "source_domain": item.get("domain"),
-            "chunk_index": 0,
-            "content": item["content"],
-            "search_score": item.get("score"),
+            "source_url": source["url"],
+            "source_title": source["title"],
+            "source_domain": source.get("domain"),
+            "chunk_index": chunk_index,
+            "content": chunk,
+            "search_score": source.get("score"),
             "embedding": vector,
         }
-        for item, vector in zip(items, vectors)
+        for (source, chunk_index, chunk), vector in zip(passages, vectors)
     ]
     async with SessionLocal() as session:
         statement = insert(ResearchChunk).values(values).on_conflict_do_nothing(
             index_elements=["state_id", "source_url", "chunk_index"]
         )
-        result = await session.execute(statement)
+        await session.execute(statement)
         await session.commit()
-        return result.rowcount or len(values)
+
+    return await research_count(state_id)
 
 
 async def retrieve_sources(state_id, query: str, limit: int = 8) -> list[dict]:
@@ -123,17 +148,21 @@ async def retrieve_sources(state_id, query: str, limit: int = 8) -> list[dict]:
     async with SessionLocal() as session:
         rows = (await session.execute(statement)).all()
 
-    results = []
+    grouped = {}
     for chunk, score in rows:
         distance_value = float(score) if score is not None else 1.0
-        results.append({
+        similarity = max(0.0, min(1.0, 1.0 - distance_value))
+        source = grouped.setdefault(chunk.source_url, {
             "title": chunk.source_title,
             "url": chunk.source_url,
             "domain": chunk.source_domain,
-            "excerpt": chunk.content,
-            "similarity": max(0.0, min(1.0, 1.0 - distance_value)),
+            "excerpt": "",
+            "similarity": similarity,
         })
-    return results
+        if chunk.content not in source["excerpt"]:
+            source["excerpt"] = (source["excerpt"] + "\n\n" + chunk.content).strip()
+        source["similarity"] = max(source["similarity"], similarity)
+    return sorted(grouped.values(), key=lambda item: item["similarity"], reverse=True)
 
 
 async def research_count(state_id) -> int:
