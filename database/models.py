@@ -60,8 +60,8 @@ class State(Base):
 
     next_step: Mapped[str | None] = mapped_column(Text)
     current_section: Mapped[int | None] = mapped_column(Integer)
-    rewrite_attempts: Mapped[int] = mapped_column(Integer, default=0)
-    section_word_limit_error_percentage: Mapped[float] = mapped_column(Float, default=10.0)
+    rewrite_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    section_word_limit_error_percentage: Mapped[float] = mapped_column(Float, default=10.0, server_default="10.0")
 
     voice_model: Mapped[str | None] = mapped_column(Text)
     current_node: Mapped[str | None] = mapped_column(Text)
