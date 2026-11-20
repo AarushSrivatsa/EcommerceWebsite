@@ -69,6 +69,10 @@ class State(Base):
     research_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     research_status: Mapped[str] = mapped_column(Text, default="pending", server_default="pending")
     research_error: Mapped[str | None] = mapped_column(Text)
+    retrieved_sources: Mapped[list | None] = mapped_column(JSONB)
+    visual_plan: Mapped[list | None] = mapped_column(JSONB)
+    grounding_score: Mapped[float | None] = mapped_column(Float)
+    grounding_feedback: Mapped[str | None] = mapped_column(Text)
 
     generation_status: Mapped[str] = mapped_column(
         Text, default="ready", server_default="ready"
