@@ -4,15 +4,15 @@ const emit = defineEmits<{ 'update:modelValue': [value: T] }>()
 </script>
 
 <template>
-  <div class="inline-flex rounded-xl border border-white/10 bg-black/20 p-1" role="tablist" :aria-label="ariaLabel">
+  <div class="tab-control" role="tablist" :aria-label="ariaLabel">
     <button
-      type="button"
       v-for="o in options"
       :key="o.value"
+      type="button"
       role="tab"
       :aria-selected="o.value === modelValue"
-      class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
-      :class="o.value === modelValue ? 'bg-brand-600 text-white shadow' : 'text-zinc-400 hover:text-white'"
+      class="tab-control-item"
+      :class="{ 'tab-control-item-active': o.value === modelValue }"
       @click="emit('update:modelValue', o.value)"
     >
       {{ o.label }}
