@@ -240,6 +240,8 @@ async def _grade_evidence(brief: str, sources: list[dict]) -> tuple[list[dict], 
 
 
 async def retrieve_section_evidence(state: BaseState, brief: str) -> tuple[list[dict], str]:
+    if state.research_status == "unavailable":
+        return [], state.research_error or "The project research index is unavailable."
     try:
         sources = await retrieve_sources(state.id, brief, limit=8)
     except Exception as exc:
@@ -299,7 +301,7 @@ async def verify_section_grounding(text: str, sources: list[dict]) -> tuple[floa
 
 async def make_visual_plan(text: str) -> list[dict]:
     """Create one visual hero per spoken paragraph, following the cinematic-skill beat discipline."""
-    paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()][:10]
+    paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
     if not paragraphs:
         return []
     try:
