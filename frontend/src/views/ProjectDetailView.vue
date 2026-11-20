@@ -319,15 +319,15 @@ async function removeProject() {
                     <small>{{ beat.camera }}</small>
                   </div>
                   <p>{{ beat.visual }}</p>
-                  <small v-if="beat.on_screen_text">On-screen text: {{ beat.on_screen_text }}</small>
-                  <img v-if="beat.image_url" :src="beat.image_url" :alt="`Visual for section ${s.position}, beat ${beatIndex + 1}`" class="visual-beat-image" loading="lazy" />
+                  <small v-if="beat.onScreenText">On-screen text: {{ beat.onScreenText }}</small>
+                  <img v-if="beat.imageUrl" :src="beat.imageUrl" :alt="`Visual for section ${s.position}, beat ${beatIndex + 1}`" class="visual-beat-image" loading="lazy" />
                   <div class="visual-beat-actions">
                     <label class="visual-beat-upload">
                       <AppIcon name="upload" :size="13" />
-                      {{ beat.image_url ? 'Replace visual' : 'Add visual' }}
+                      {{ beat.imageUrl ? 'Replace visual' : 'Add visual' }}
                       <input type="file" accept=".jpg,.jpeg,.png,.webp,.bmp" @change="uploadBeatImage(s.position, beatIndex, $event)" />
                     </label>
-                    <button v-if="beat.image_url" type="button" class="visual-beat-remove" @click="removeBeatImage(s.position, beatIndex)">Remove</button>
+                    <button v-if="beat.imageUrl" type="button" class="visual-beat-remove" @click="removeBeatImage(s.position, beatIndex)">Remove</button>
                   </div>
                 </li>
               </ol>
@@ -425,7 +425,7 @@ async function removeProject() {
 
       <section v-else class="project-settings-page">
         <div class="settings-card">
-          <div class="project-content-heading"><div><h2>Narration settings</h2><p>Changes here mean your scene videos need to be rebuilt.</p></div></div>
+          <div class="project-content-heading"><div><h2>Narration settings</h2><p>Voice and speed changes affect rendering. Similarity changes affect future generation and AI rewrites.</p></div></div>
           <div class="settings-fields">
             <div><label for="voice" class="field-label">Narrator voice</label>
               <select id="voice" v-model="voice">
@@ -446,7 +446,7 @@ async function removeProject() {
               <p class="field-hint">A new section at or above this similarity to an earlier section is sent back for a different fact or story beat. This changes writing only; existing videos remain untouched.</p>
             </div>
           </div>
-          <div class="settings-footer"><span>Current runtime: {{ runtime }}</span><button :disabled="!settingsChanged || busy" class="primary-action" @click="saveSettings">Save settings</button></div>
+          <div class="settings-footer"><span>Current runtime: {{ runtime }}</span><button :disabled="!settingsChanged || busy || writing" class="primary-action" @click="saveSettings">Save settings</button></div>
         </div>
         <div class="danger-zone">
           <div><strong>Delete this project</strong><p>This permanently removes the project, its sections and generated files.</p></div>
