@@ -18,7 +18,7 @@ const form = reactive<NewProjectForm>({
   estimatedDurationInMinutes: 3,
   wordsPerMinute: 150,
   totalSections: null,
-  voiceModel: 'af_heart',
+  voiceModel: 'Zoey',
 })
 const autoSections = ref(true)
 const sectionCount = ref(6)
