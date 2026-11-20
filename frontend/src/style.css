@@ -875,7 +875,7 @@ select {
 @media (max-width: 860px) {
   .create-layout, .youtube-layout { grid-template-columns: minmax(0, 1fr); }
   .create-aside { position: static; }
-  .summary-card { display: none; }
+  .summary-card { display: block; padding: 16px; }
   .aside-footnote { margin: -3px 2px 0; }
   .youtube-help-card { display: grid; grid-template-columns: auto 1fr; column-gap: 12px; align-items: center; }
   .youtube-help-card .youtube-help-icon { grid-row: span 2; }
