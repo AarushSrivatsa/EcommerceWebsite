@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from BaseState import BaseState
+from aiagent.BaseState import BaseState
 from config import DATABASE_URL, IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 
 engine = create_async_engine(
