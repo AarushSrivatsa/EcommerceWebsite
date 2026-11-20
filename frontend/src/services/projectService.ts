@@ -40,7 +40,7 @@ interface SectionDto {
   video_error: string | null
   updated_at: string | null
   sources: { title: string; url: string; domain: string | null; excerpt: string; similarity: number }[]
-  visual_plan: { narration: string; visual: string; on_screen_text: string; camera: string }[]
+  visual_plan: { narration: string; visual: string; on_screen_text: string; camera: string; image_url?: string | null }[]
   similarity_score: number | null
   similarity_threshold: number | null
   grounding_score: number | null
@@ -168,6 +168,16 @@ export async function setSectionImage(id: string, position: number, file: File):
 
 export async function removeSectionImage(id: string, position: number): Promise<Section> {
   return toSection(await api.delete<SectionDto>(`/scripts/${id}/sections/${position}/image`))
+}
+
+export async function setVisualBeatImage(id: string, position: number, beatIndex: number, file: File): Promise<Section> {
+  const form = new FormData()
+  form.append('file', file)
+  return toSection(await api.put<SectionDto>(`/scripts/${id}/sections/${position}/image/beats/${beatIndex}`, form))
+}
+
+export async function removeVisualBeatImage(id: string, position: number, beatIndex: number): Promise<Section> {
+  return toSection(await api.delete<SectionDto>(`/scripts/${id}/sections/${position}/image/beats/${beatIndex}`))
 }
 
 export async function rerenderSection(id: string, position: number): Promise<Section> {
