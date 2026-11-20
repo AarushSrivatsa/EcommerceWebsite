@@ -28,8 +28,8 @@ class SectionOut(BaseModel):
     video_status: str
     video_error: str | None
     updated_at: datetime | None
-    sources: list[dict] = []
-    visual_plan: list[dict] = []
+    sources: list[dict] = Field(default_factory=list)
+    visual_plan: list[dict] = Field(default_factory=list)
     similarity_score: float | None = None
     similarity_threshold: float | None = None
     grounding_score: float | None = None
@@ -162,6 +162,7 @@ class SectionUpdate(BaseModel):
 async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate):
     from aiagent.nodes import embed, suggest_image_prompt, similarity_limit
 
+    state = await deps.script_or_404(script_id)
     await deps.section_or_404(script_id, position)
     text = body.text.strip()
     embedding, image_prompt = await asyncio.gather(
@@ -180,7 +181,7 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
                 sources=[],
                 visual_plan=[],
                 similarity_score=None,
-                similarity_threshold=similarity_limit(deps.state_from_row(await deps.script_or_404(script_id))),
+                similarity_threshold=similarity_limit(deps.state_from_row(state)),
                 grounding_score=None,
                 grounding_feedback=None,
                 content_rev=Section.content_rev + 1,
