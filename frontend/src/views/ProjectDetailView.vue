@@ -443,7 +443,7 @@ async function removeProject() {
               </div>
               <input id="s-similarity" v-model.number="similarity" type="range" min="60" max="100" step="1" />
               <div class="range-ends"><span>Stricter</span><span>More permissive</span></div>
-              <p class="field-hint">A new section at or above this similarity to an earlier section is sent back for a different fact or story beat. This changes writing only; existing videos remain untouched.</p>
+              <p class="field-hint">This is semantic embedding similarity, not an exact text-match score. A section at or above the limit is retried up to three times. The score and limit used remain visible on each section. Existing videos are not affected.</p>
             </div>
           </div>
           <div class="settings-footer"><span>Current runtime: {{ runtime }}</span><button :disabled="!settingsChanged || busy || writing" class="primary-action" @click="saveSettings">Save settings</button></div>
