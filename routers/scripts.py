@@ -10,6 +10,7 @@ from sqlalchemy import select, update
 import deps
 import database.storage as storage
 from aiagent.BaseState import BaseState
+from aiagent.nodes import similarity_limit
 from config import IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 from database.initialization import SessionLocal
 from database.models import Section, State
@@ -29,6 +30,9 @@ class ScriptOut(BaseModel):
     video_type: str | None
     voice_model: str | None
     words_per_minute: int
+    similarity_threshold: float
+    research_status: str
+    research_error: str | None
     estimated_duration_in_hours: float
     total_sections: int | None
     sections_completed: int | None
@@ -46,6 +50,9 @@ async def script_out(state: State) -> ScriptOut:
         video_type=state.video_type,
         voice_model=state.voice_model,
         words_per_minute=state.words_per_minute,
+        similarity_threshold=similarity_limit(deps.state_from_row(state)),
+        research_status=state.research_status,
+        research_error=state.research_error,
         estimated_duration_in_hours=state.estimated_duration_in_hours,
         total_sections=state.total_sections,
         sections_completed=state.sections_completed,
@@ -75,7 +82,7 @@ class ScriptCreate(BaseModel):
     total_sections: int | None = Field(default=None, ge=1, le=200)
     voice_model: str = "Zoey"
     video_type: Literal["facts", "story"] | None = None
-    similarity_threshold: float | None = Field(default=None, gt=0, le=1)
+    similarity_threshold: float | None = Field(default=None, ge=0.5, le=1)
 
 
 @router.post("", response_model=ScriptOut, status_code=202)
@@ -123,6 +130,7 @@ async def get_script(script_id: uuid.UUID):
 class ScriptUpdate(BaseModel):
     voice_model: str | None = None
     words_per_minute: int | None = Field(default=None, ge=60, le=300)
+    similarity_threshold: float | None = Field(default=None, ge=0.5, le=1)
 
 
 @router.patch("/{script_id}", response_model=ScriptOut)
@@ -130,29 +138,32 @@ async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
     state = await deps.script_or_404(script_id)
     changes = {
         key: value
-        for key, value in body.model_dump(exclude_none=True).items()
+        for key, value in body.model_dump(exclude_unset=True).items()
         if getattr(state, key) != value
     }
+    render_changes = {"voice_model", "words_per_minute"} & changes.keys()
 
     if changes:
         async with SessionLocal() as session:
             await session.execute(
                 update(State).where(State.id == script_id).values(**changes)
             )
-            await session.execute(
-                update(Section)
-                .where(Section.state_id == script_id)
-                .values(
-                    content_rev=Section.content_rev + 1,
-                    video_status="pending",
-                    video_error=None,
+            # A similarity threshold affects future writing only; it does not invalidate rendered media.
+            if render_changes:
+                await session.execute(
+                    update(Section)
+                    .where(Section.state_id == script_id)
+                    .values(
+                        content_rev=Section.content_rev + 1,
+                        video_status="pending",
+                        video_error=None,
+                    )
                 )
-            )
-            await session.execute(
-                update(State)
-                .where(State.id == script_id, State.final_video_status == "ready")
-                .values(final_video_status="outdated")
-            )
+                await session.execute(
+                    update(State)
+                    .where(State.id == script_id, State.final_video_status == "ready")
+                    .values(final_video_status="outdated")
+                )
             await session.commit()
 
     return await script_out(await deps.script_or_404(script_id))
