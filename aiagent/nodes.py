@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
 
 import memory
-from BaseState import BaseState
+from .BaseState import BaseState
 from database.database import SessionLocal, Section, save_state, load_section
 
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
