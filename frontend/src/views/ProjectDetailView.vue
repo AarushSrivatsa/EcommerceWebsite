@@ -333,8 +333,8 @@ async function removeProject() {
               </ol>
             </details>
 
-            <div v-if="s.sources.length" class="section-sources">
-              <strong>Research sources</strong>
+            <details v-if="s.sources.length" class="section-sources">
+              <summary>Research sources · {{ s.sources.length }}</summary>
               <a
                 v-for="source in s.sources"
                 :key="source.url"
@@ -342,7 +342,7 @@ async function removeProject() {
                 target="_blank"
                 rel="noopener noreferrer"
               >{{ source.title }}</a>
-            </div>
+            </details>
 
             <details v-if="s.groundingFeedback" class="grounding-notes">
               <summary>Evidence review notes</summary>
