@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -38,10 +39,16 @@ async def log_bad_request(request: Request, exc: RequestValidationError):
     print(f"422: {request.method} {request.url.path} -> {exc.errors()}", flush=True)
     return await request_validation_exception_handler(request, exc)
 
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

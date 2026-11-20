@@ -43,3 +43,10 @@ The selected mode is stored on the section record. Existing sections default to 
 - The health endpoint and memory log lines report process RSS plus cgroup container usage/limit/peak where the host exposes those metrics.
 
 These measures reduce avoidable memory spikes; they are not a guarantee that every workload fits in 512 MB. Confirm peaks in Render's Metrics view using representative projects.
+
+
+## CORS and API exposure
+
+The API allows the local Vite development origin by default. The production frontend is served by the same FastAPI origin, so it does not need cross-origin access. When hosting the frontend separately, set `CORS_ORIGINS` to a comma-separated list of exact trusted origins.
+
+CORS is not authentication. Before exposing this API to multiple users or the public internet, add Supabase Auth JWT verification and per-user ownership checks for projects, sections, and YouTube channel operations. The current data model does not yet associate projects with authenticated users.
