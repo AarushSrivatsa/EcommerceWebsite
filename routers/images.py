@@ -132,8 +132,7 @@ async def set_visual_beat_image(
         mimetypes.guess_type(path)[0] or "application/octet-stream",
     )
 
-    old_path = plan[beat_index].get("image_path")
-    plan[beat_index] = {**plan[beat_index], "image_path": path}
+    old_path = None
     async with SessionLocal() as session:
         async with session.begin():
             current = (
@@ -150,12 +149,12 @@ async def set_visual_beat_image(
             if beat_index >= len(current_plan):
                 await storage.delete_quiet(IMAGES_BUCKET, [path])
                 raise HTTPException(409, "the visual plan changed; refresh the section and try again")
+            replaced_path = current_plan[beat_index].get("image_path")
             current_plan[beat_index] = {**current_plan[beat_index], "image_path": path}
             current.visual_plan = current_plan
             current.content_rev += 1
             current.video_status = "pending"
             current.video_error = None
-            current.updated_at = None
 
             await session.execute(
                 update(State)
@@ -164,8 +163,8 @@ async def set_visual_beat_image(
             )
         updated = await session.get(Section, section.id)
 
-    if old_path and old_path != path:
-        await storage.delete_quiet(IMAGES_BUCKET, [old_path])
+    if replaced_path and replaced_path != path:
+        await storage.delete_quiet(IMAGES_BUCKET, [replaced_path])
     if updated is None:
         raise HTTPException(404, f"section {position} not found")
     return await section_out(updated)
@@ -183,8 +182,7 @@ async def remove_visual_beat_image(
     if beat_index < 0 or beat_index >= len(plan):
         raise HTTPException(422, f"visual beat index must be between 0 and {len(plan) - 1}")
 
-    old_path = plan[beat_index].get("image_path")
-    plan[beat_index] = {key: value for key, value in plan[beat_index].items() if key not in {"image_path", "image_url"}}
+    old_path = None
     async with SessionLocal() as session:
         async with session.begin():
             current = (
@@ -199,6 +197,7 @@ async def remove_visual_beat_image(
             current_plan = list(current.visual_plan or [])
             if beat_index >= len(current_plan):
                 raise HTTPException(409, "the visual plan changed; refresh the section and try again")
+            old_path = current_plan[beat_index].get("image_path")
             current_plan[beat_index] = {
                 key: value for key, value in current_plan[beat_index].items()
                 if key not in {"image_path", "image_url"}
