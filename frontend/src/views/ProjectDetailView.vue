@@ -201,17 +201,17 @@ async function removeProject() {
 </script>
 
 <template>
-  <div v-if="project" class="fade-up">
+  <div v-if="project" class="fade-up project-page">
     <RouterLink to="/" class="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white">
       <AppIcon name="chevron-left" :size="16" /> Projects
     </RouterLink>
 
-    <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
+    <div class="project-hero">
       <div class="min-w-0">
-        <h1 class="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{{ project.userPrompt }}</h1>
-        <p class="mt-1 text-sm text-zinc-400">Created {{ formatDate(project.createdAt) }} · {{ sections.length }} {{ sections.length === 1 ? 'section' : 'sections' }} · {{ totalWords }} words · {{ runtime }}</p>
+        <h1 class="project-title">{{ project.userPrompt }}</h1>
+        <p class="project-meta-line">Created {{ formatDate(project.createdAt) }} · {{ sections.length }} {{ sections.length === 1 ? 'section' : 'sections' }} · {{ totalWords }} words · {{ runtime }}</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="project-statuses">
         <StatusBadge :status="project.generationStatus" />
         <StatusBadge :status="project.finalVideoStatus" />
       </div>
@@ -237,20 +237,20 @@ async function removeProject() {
       <button class="mt-4 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-brand-500" @click="load"><AppIcon name="refresh" :size="15" /> Try again</button>
     </div>
 
-    <div v-if="!loading && !loadError" class="mt-8 overflow-x-auto"><SegmentedControl v-model="tab" :options="tabs" aria-label="Project sections" /></div>
+    <div v-if="!loading && !loadError" class="project-tabs overflow-x-auto"><SegmentedControl v-model="tab" :options="tabs" aria-label="Project sections" /></div>
 
     <!-- SECTIONS -->
     <template v-if="!loading && !loadError">
-    <ul v-if="tab === 'sections'" class="mt-6 space-y-4">
-      <li v-for="s in sections" :key="s.position" class="rounded-2xl border border-white/8 bg-ink-850/70 p-4 sm:p-5">
-        <div class="flex items-center justify-between gap-3">
+    <ul v-if="tab === 'sections'" class="project-sections">
+      <li v-for="s in sections" :key="s.position" class="section-card">
+        <div class="section-card-top">
           <div class="flex items-center gap-3">
-            <span class="grid size-7 place-items-center rounded-lg bg-brand-500/15 text-xs font-semibold text-brand-400">{{ s.position }}</span>
+            <span class="section-number">{{ s.position }}</span>
             <StatusBadge :status="s.videoStatus" />
           </div>
           <span class="text-xs text-zinc-500">{{ s.wordCount }} words</span>
         </div>
-        <p class="mt-3 text-sm leading-relaxed text-zinc-200">{{ s.text }}</p>
+        <p class="section-copy">{{ s.text }}</p>
         <p v-if="s.videoStatus === 'failed' && s.videoError" class="mt-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{{ s.videoError }}</p>
         <div class="mt-4"><SectionImage :project-id="id" :section="s" @changed="watchRender" /></div>
 
@@ -258,7 +258,7 @@ async function removeProject() {
         <p v-else-if="s.videoStatus === 'processing'" class="mt-3 flex items-center gap-2 text-xs text-sky-300"><AppIcon name="loader" :size="14" class="animate-spin" /> Building this section’s video…</p>
         <p v-else-if="s.videoStatus === 'pending'" class="mt-3 text-xs text-zinc-500">Video not built yet. Add the image, then build it.</p>
 
-        <div class="mt-3 flex flex-wrap gap-1">
+        <div class="section-actions">
           <button class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white" @click="startEdit(s.position)">
             <AppIcon name="pencil" :size="14" /> Edit text
           </button>
@@ -289,7 +289,7 @@ async function removeProject() {
     </ul>
 
     <!-- The two build buttons: nothing is rendered until one of them is pressed -->
-    <div v-if="tab === 'sections' && sections.length" class="sticky bottom-4 z-10 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-ink-900/95 px-5 py-4 shadow-xl shadow-black/40 backdrop-blur">
+    <div v-if="tab === 'sections' && sections.length" class="build-toolbar">
       <p class="text-sm text-zinc-300">
         <span class="font-semibold text-white">{{ sections.length - pendingSections }} of {{ sections.length }}</span> section videos built
         <span v-if="rendering" class="ml-1 text-sky-300">· building…</span>
