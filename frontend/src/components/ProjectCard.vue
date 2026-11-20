@@ -29,7 +29,7 @@ const typeLabel = computed(() => (props.project.videoType === 'auto' ? 'Auto' : 
     @keydown.space.prevent="emit('open')"
   >
     <div class="project-card-art">
-      <SceneThumb :seed="seed" :label="\`\${project.estimatedDurationInMinutes} min\`" />
+      <SceneThumb :seed="seed" :label="project.estimatedDurationInMinutes + ' min'" />
       <div class="project-card-art-overlay">
         <span class="project-card-type">{{ typeLabel }} VIDEO</span>
         <span class="project-card-open"><AppIcon name="arrow-right" :size="17" /></span>
