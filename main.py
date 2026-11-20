@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 import database.database as db
+import database.storage as storage
 import deps
 import memory
 from aiagent.final_graph import build_graph
@@ -22,7 +23,10 @@ async def lifespan(app: FastAPI):
     await db.reset_interrupted_jobs()
     deps.graph = build_graph()
     print(f"startup: ready ({memory.rss_mb()} MB)", flush=True)
-    yield
+    try:
+        yield
+    finally:
+        await storage.close()
 
 
 app = FastAPI(title="Script to video", lifespan=lifespan)
