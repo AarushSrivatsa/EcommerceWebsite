@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AddSectionModal from '@/components/AddSectionModal.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -77,6 +77,7 @@ const poller = usePolling(async () => {
 watch(working, (w) => w && poller.start()) // the poller stops itself once nothing is running
 
 async function load() {
+  poller.stop()
   loading.value = true
   loadError.value = null
   try {
@@ -89,7 +90,7 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+watch(id, load, { immediate: true })
 
 // ---- sections ----
 const editing = ref<number | null>(null)
@@ -115,8 +116,7 @@ async function confirmDeleteSection() {
   if (position !== null) await run(() => projectsStore.removeSection(id.value, position))
 }
 async function rerender(position: number) {
-  await run(() => projectsStore.rerenderSection(id.value, position))
-  watchRender()
+  if (await run(() => projectsStore.rerenderSection(id.value, position))) watchRender()
 }
 
 // ---- request changes (AI rewrite) ----
