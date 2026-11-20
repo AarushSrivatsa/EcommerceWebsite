@@ -166,7 +166,8 @@ async function submit() {
             <div class="range-ends"><span>Stricter</span><span>More permissive</span></div>
             <p class="field-hint">
               A section at or above this similarity to an earlier section is rewritten. Lower values prevent more repetition.
-              Recommended: {{ recommendedSimilarity }}% for this format.
+              <template v-if="form.videoType === 'auto'">Auto mode uses 88% for facts or 92% for stories after format detection. Moving this slider overrides that choice.</template>
+              <template v-else>Recommended: {{ recommendedSimilarity }}% for this format.</template>
             </p>
             <button
               v-if="form.similarityThreshold !== null"
