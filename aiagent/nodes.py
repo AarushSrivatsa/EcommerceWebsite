@@ -8,6 +8,8 @@ from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
 
 import memory
+import database.storage as storage
+from config import IMAGES_BUCKET
 from .BaseState import BaseState
 from database.initialization import SessionLocal
 from database.models import Section, State
@@ -535,6 +537,19 @@ async def push_section_node(state: BaseState) -> dict:
     if not image_prompt:
         image_prompt = await suggest_image_prompt(text)
 
+    async with SessionLocal() as session:
+        previous_visual_plan = await session.scalar(
+            select(Section.visual_plan).where(
+                Section.state_id == state.id,
+                Section.position == state.current_section,
+            )
+        )
+    previous_beat_paths = [
+        beat.get("image_path")
+        for beat in (previous_visual_plan or [])
+        if beat.get("image_path")
+    ]
+
     stmt = insert(Section).values(
         state_id=state.id,
         position=state.current_section,
@@ -573,6 +588,14 @@ async def push_section_node(state: BaseState) -> dict:
     async with SessionLocal() as session:
         await session.execute(stmt)
         await session.commit()
+
+    new_beat_paths = {
+        beat.get("image_path")
+        for beat in visual_plan
+        if beat.get("image_path")
+    }
+    obsolete_paths = [path for path in previous_beat_paths if path not in new_beat_paths]
+    await storage.delete_quiet(IMAGES_BUCKET, obsolete_paths)
 
     update = {                                   # nothing is waiting any more, so the router moves on
         "current_node": "push_section",
