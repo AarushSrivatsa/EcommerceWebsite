@@ -24,6 +24,7 @@ export interface VisualBeat {
   visual: string
   on_screen_text: string
   camera: string
+  imageUrl?: string | null
 }
 
 export interface Section {
