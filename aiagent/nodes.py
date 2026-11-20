@@ -1,9 +1,7 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 import asyncio
 import json
 
+from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
@@ -11,6 +9,8 @@ from sqlalchemy.dialects.postgresql import insert
 import memory
 from .BaseState import BaseState
 from database.database import SessionLocal, Section, save_state, load_section
+
+load_dotenv()
 
 MAX_REWRITES = 3                      # after this many failed attempts the section is pushed anyway
 SIMILARITY_THRESHOLDS = {"facts": 0.88, "story": 0.92}   # used when the state has no similarity_threshold
