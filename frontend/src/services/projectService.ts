@@ -1,5 +1,5 @@
 // The only file that knows the backend's endpoints and snake_case response shapes.
-import type { FinalVideoStatus, GenerationStatus, NewProjectForm, Project, Section, SectionVideoStatus, VideoType } from '@/types'
+import type { FinalVideoStatus, GenerationStatus, NewProjectForm, Project, Section, SectionVideoStatus } from '@/types'
 import { api } from './api'
 
 // ---- raw backend shapes (routers/scripts.py, routers/sections.py) ----
@@ -43,9 +43,10 @@ function toVoiceModel(value: string | null): string {
   if (!value) return 'Zoey'
 
   const legacyPrefixes = ['af_', 'am_', 'bf_', 'bm_']
-  if (legacyPrefixes.some((prefix) => value.startsWith(prefix)) || value.toLowerCase() === 'default' || value.toLowerCase() === 'en_us_zoey') {
-    return 'Zoey'
-  }
+  const legacyIds = ['default', 'en_us_zoey']
+  const isLegacyVoice = legacyPrefixes.some((prefix) => value.startsWith(prefix)) || legacyIds.includes(value.toLowerCase())
+
+  if (isLegacyVoice) return 'Zoey'
 
   return value
 }
