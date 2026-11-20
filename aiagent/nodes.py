@@ -323,7 +323,7 @@ async def writer_node(state: BaseState) -> dict:
         "generated_response_word_count": len(text.split()),
         "similarity_score": None if nearest is None else float(1 - nearest),   # None = nothing to compare = fine
     }
-        async with SessionLocal() as session:
+    async with SessionLocal() as session:
         await session.merge(State(**state.model_copy(update=update).model_dump()))
         await session.commit()
     return update
@@ -372,7 +372,7 @@ async def push_section_node(state: BaseState) -> dict:
         "generated_response_word_count": None,
         "similarity_score": None,
     }
-        async with SessionLocal() as session:
+    async with SessionLocal() as session:
         await session.merge(State(**state.model_copy(update=update).model_dump()))
         await session.commit()
     return update
