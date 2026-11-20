@@ -54,72 +54,84 @@ async function submit() {
 </script>
 
 <template>
-  <div class="fade-up mx-auto max-w-3xl">
-    <RouterLink to="/" class="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white">
-      <AppIcon name="chevron-left" :size="16" /> Projects
-    </RouterLink>
-    <h1 class="mt-3 text-2xl font-semibold tracking-tight text-white sm:text-3xl">New project</h1>
-    <p class="mt-1 text-sm text-zinc-400">Describe your idea. The story is written first; you edit it, add images and build the videos yourself.</p>
+  <div class="fade-up create-page">
+    <div class="create-heading">
+      <RouterLink to="/" class="back-link"><AppIcon name="chevron-left" :size="15" /> All projects</RouterLink>
+      <p class="eyebrow mt-5">NEW PROJECT</p>
+      <h1 class="page-title mt-2">Let’s make a video.</h1>
+      <p class="page-subtitle mt-2">Start with your idea. You can edit the script before creating any videos.</p>
+    </div>
 
-    <form class="mt-8 space-y-8" @submit.prevent="submit">
-      <!-- Prompt -->
-      <section class="rounded-2xl border border-white/8 bg-ink-850/70 p-5">
-        <label for="prompt" class="text-sm font-semibold text-white">What’s your video about?</label>
-        <textarea
-          id="prompt"
-          v-model="form.userPrompt"
-          rows="4"
-          :disabled="generating"
-          placeholder="e.g. Interesting facts about octopuses"
-          class="mt-3 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-3.5 text-sm leading-relaxed text-white placeholder:text-zinc-500 focus:border-brand-400/60 focus:outline-none disabled:opacity-60"
-        />
-        <div class="mt-3 flex flex-wrap gap-2">
-          <button
-            v-for="p in examplePrompts"
-            :key="p"
-            type="button"
+    <div class="create-layout mt-7">
+      <form class="create-form" @submit.prevent="submit">
+        <section class="editor-panel">
+          <div class="panel-heading">
+            <span class="panel-step">01</span>
+            <div><h2>Your idea</h2><p>What would you like your video to be about?</p></div>
+          </div>
+          <label for="prompt" class="field-label">Describe your video</label>
+          <textarea
+            id="prompt"
+            v-model="form.userPrompt"
+            rows="5"
+            maxlength="2000"
             :disabled="generating"
-            class="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-300 transition hover:border-brand-400/40 hover:text-white"
-            @click="form.userPrompt = p"
-          >
-            {{ p }}
-          </button>
-        </div>
-      </section>
-
-      <!-- Format -->
-      <section class="rounded-2xl border border-white/8 bg-ink-850/70 p-5">
-        <h2 class="text-sm font-semibold text-white">Format</h2>
-        <div class="mt-3"><SegmentedControl v-model="form.videoType" :options="typeOptions" aria-label="Video type" /></div>
-        <p class="mt-2 text-xs text-zinc-500">{{ typeHint[form.videoType] }}</p>
-
-        <div class="mt-6 grid gap-6 sm:grid-cols-2">
-          <div>
-            <div class="flex items-baseline justify-between">
-              <label for="duration" class="text-sm font-medium text-zinc-200">Target length</label>
-              <span class="text-sm font-semibold text-white">{{ form.estimatedDurationInMinutes }} min</span>
-            </div>
-            <input id="duration" v-model.number="form.estimatedDurationInMinutes" type="range" min="1" max="30" step="1" class="mt-3 w-full accent-brand-500" />
+            placeholder="Example: 7 strange things that happen in deep ocean…"
+            class="prompt-input"
+          />
+          <div class="prompt-footer">
+            <span>Be as specific as you like. You can refine the script later.</span>
+            <span>{{ form.userPrompt.length }}/2000</span>
           </div>
-          <div>
-            <div class="flex items-baseline justify-between">
-              <label for="wpm" class="text-sm font-medium text-zinc-200">Speaking speed</label>
-              <span class="text-sm font-semibold text-white">{{ form.wordsPerMinute }} wpm</span>
-            </div>
-            <input id="wpm" v-model.number="form.wordsPerMinute" type="range" min="60" max="300" step="10" class="mt-3 w-full accent-brand-500" />
+          <div class="example-prompts">
+            <span class="field-label">Need an idea?</span>
+            <button
+              v-for="p in examplePrompts"
+              :key="p"
+              type="button"
+              :disabled="generating"
+              class="example-chip"
+              @click="form.userPrompt = p"
+            >
+              {{ p }}
+            </button>
           </div>
-        </div>
-        <p class="mt-4 text-xs text-zinc-500">≈ {{ estimatedWords.toLocaleString() }} words in total</p>
+        </section>
 
-        <div class="mt-6 border-t border-white/5 pt-5">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <p class="text-sm font-medium text-zinc-200">Number of sections</p>
-              <p class="text-xs text-zinc-500">Let the writer decide, or set it yourself.</p>
+        <section class="editor-panel">
+          <div class="panel-heading">
+            <span class="panel-step">02</span>
+            <div><h2>Choose your format</h2><p>Set the style and length of your video.</p></div>
+          </div>
+          <div class="field-group">
+            <span class="field-label">Video style</span>
+            <SegmentedControl v-model="form.videoType" :options="typeOptions" aria-label="Video type" />
+            <p class="field-hint">{{ typeHint[form.videoType] }}</p>
+          </div>
+
+          <div class="range-grid">
+            <div class="range-card">
+              <div class="range-card-heading">
+                <label for="duration" class="field-label">Video length</label>
+                <strong>{{ form.estimatedDurationInMinutes }} min</strong>
+              </div>
+              <input id="duration" v-model.number="form.estimatedDurationInMinutes" type="range" min="1" max="30" step="1" class="range-input" />
+              <div class="range-ends"><span>1 min</span><span>30 min</span></div>
             </div>
-            <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-zinc-300">
-              <input v-model="autoSections" type="checkbox" class="size-4 accent-brand-500" /> Automatic
-            </label>
+            <div class="range-card">
+              <div class="range-card-heading">
+                <label for="wpm" class="field-label">Narration speed</label>
+                <strong>{{ form.wordsPerMinute }} wpm</strong>
+              </div>
+              <input id="wpm" v-model.number="form.wordsPerMinute" type="range" min="60" max="300" step="10" class="range-input" />
+              <div class="range-ends"><span>Slow</span><span>Fast</span></div>
+            </div>
+          </div>
+          <p class="estimate-note">That’s approximately <strong>{{ estimatedWords.toLocaleString() }} words</strong> of narration.</p>
+
+          <div class="section-count-setting">
+            <div><span class="field-label">Script sections</span><p class="field-hint">Let the writer choose, or set a number yourself.</p></div>
+            <label class="toggle-label"><input v-model="autoSections" type="checkbox" /> Automatic</label>
           </div>
           <input
             v-if="!autoSections"
@@ -128,42 +140,62 @@ async function submit() {
             min="1"
             max="200"
             aria-label="Number of sections"
-            class="mt-3 w-28 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-brand-400/60 focus:outline-none"
+            class="section-count-input"
           />
-        </div>
-      </section>
+        </section>
 
-      <!-- Voice -->
-      <section class="rounded-2xl border border-white/8 bg-ink-850/70 p-5">
-        <h2 class="text-sm font-semibold text-white">Narrator voice</h2>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label
-            v-for="v in voices"
-            :key="v.id"
-            class="flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition"
-            :class="form.voiceModel === v.id ? 'border-brand-400/60 bg-brand-500/10' : 'border-white/10 hover:border-white/20'"
-          >
-            <input v-model="form.voiceModel" type="radio" name="voice" :value="v.id" class="sr-only" />
-            <span class="grid size-9 place-items-center rounded-lg bg-white/5 text-brand-400"><AppIcon name="mic" :size="16" /></span>
-            <span class="leading-tight">
-              <span class="block text-sm font-medium text-white">{{ v.label }}</span>
-              <span class="block text-xs text-zinc-500">{{ v.accent }}</span>
-            </span>
-          </label>
-        </div>
-      </section>
+        <section class="editor-panel">
+          <div class="panel-heading">
+            <span class="panel-step">03</span>
+            <div><h2>Pick a narrator</h2><p>Choose the voice that fits your video.</p></div>
+          </div>
+          <div class="voice-grid">
+            <label
+              v-for="v in voices"
+              :key="v.id"
+              class="voice-option"
+              :class="{ 'voice-option-active': form.voiceModel === v.id }"
+            >
+              <input v-model="form.voiceModel" type="radio" name="voice" :value="v.id" />
+              <span class="voice-icon"><AppIcon name="mic" :size="17" /></span>
+              <span class="voice-copy"><strong>{{ v.label }}</strong><small>{{ v.accent }}</small></span>
+              <AppIcon v-if="form.voiceModel === v.id" name="check" :size="16" class="voice-check" />
+            </label>
+          </div>
+        </section>
 
-      <div class="flex flex-wrap items-center justify-end gap-3">
-        <RouterLink to="/" class="rounded-xl px-4 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/5">Cancel</RouterLink>
-        <button
-          type="submit"
-          :disabled="!canSubmit"
-          class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-accent-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-600/25 transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <AppIcon :name="generating ? 'loader' : 'sparkles'" :class="{ 'animate-spin': generating }" />
-          {{ generating ? 'Starting…' : 'Generate story' }}
-        </button>
-      </div>
-    </form>
+        <div class="create-submit-row">
+          <RouterLink to="/" class="secondary-action">Cancel</RouterLink>
+          <button type="submit" :disabled="!canSubmit" class="primary-action">
+            <AppIcon :name="generating ? 'loader' : 'sparkles'" :class="{ 'animate-spin': generating }" :size="17" />
+            {{ generating ? 'Starting your project…' : 'Generate my script' }}
+            <AppIcon v-if="!generating" name="arrow-right" :size="16" />
+          </button>
+        </div>
+      </form>
+
+      <aside class="create-aside">
+        <div class="summary-card">
+          <div class="summary-card-top"><span class="summary-spark"><AppIcon name="sparkles" :size="16" /></span><span>LIVE PREVIEW</span></div>
+          <h2>{{ form.userPrompt.trim() || 'Your video idea' }}</h2>
+          <p class="summary-caption">Your project at a glance</p>
+          <div class="summary-details">
+            <div><span>Format</span><strong>{{ form.videoType === 'auto' ? 'Smart format' : form.videoType === 'facts' ? 'Facts' : 'Story' }}</strong></div>
+            <div><span>Length</span><strong>{{ form.estimatedDurationInMinutes }} minutes</strong></div>
+            <div><span>Words</span><strong>{{ estimatedWords.toLocaleString() }} approx.</strong></div>
+            <div><span>Sections</span><strong>{{ autoSections ? 'Automatic' : sectionCount }}</strong></div>
+            <div><span>Narrator</span><strong>{{ voices.find((v) => v.id === form.voiceModel)?.label ?? form.voiceModel }}</strong></div>
+          </div>
+          <div class="summary-divider"></div>
+          <p class="summary-caption">How it works</p>
+          <ol class="workflow-list">
+            <li><span>1</span><div><strong>Generate your script</strong><small>Your idea becomes a structured story.</small></div></li>
+            <li><span>2</span><div><strong>Review and edit</strong><small>Make every section sound right.</small></div></li>
+            <li><span>3</span><div><strong>Build and publish</strong><small>Create the videos and upload them.</small></div></li>
+          </ol>
+        </div>
+        <p class="aside-footnote"><AppIcon name="check" :size="14" /> Nothing is rendered until you choose to build the video.</p>
+      </aside>
+    </div>
   </div>
 </template>
