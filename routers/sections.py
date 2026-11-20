@@ -1,48 +1,67 @@
-"""Sections: list, get, add your own, edit the text yourself, AI rewrite, re-render, delete."""
+"""Section listing, editing, rendering and deletion routes."""
 import asyncio
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select, update
 
-import database.database as db
 import deps
 import database.storage as storage
 import media.video_service as video_service
 from config import IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
+from database.initialization import SessionLocal
+from database.models import Section, State
 
 router = APIRouter(prefix="/scripts/{script_id}/sections", tags=["sections"])
 
 
 class SectionOut(BaseModel):
-    """What every section endpoint returns (also used by the images router)."""
     position: int
     text: str
     word_count: int
     image_prompt: str | None
     image_url: str | None
     audio_url: str | None
-    video_url: str | None                 # last finished video (may be older than the text while video_status != ready)
-    video_status: str                     # pending | processing | ready | failed
+    video_url: str | None
+    video_status: str
     video_error: str | None
     updated_at: datetime | None
 
 
-async def section_out(s: db.Section) -> SectionOut:
-    """Database row -> SectionOut (storage paths become urls)."""
-    image, audio, video = await asyncio.gather(
-        storage.url(IMAGES_BUCKET, s.image_path), storage.url(AUDIOS_BUCKET, s.audio_path),
-        storage.url(VIDEOS_BUCKET, s.video_path))
-    return SectionOut(position=s.position, text=s.text, word_count=s.word_count, image_prompt=s.image_prompt,
-                      image_url=image, audio_url=audio, video_url=video, video_status=s.video_status,
-                      video_error=s.video_error, updated_at=s.updated_at)
+async def section_out(section: Section) -> SectionOut:
+    image_url, audio_url, video_url = await asyncio.gather(
+        storage.url(IMAGES_BUCKET, section.image_path),
+        storage.url(AUDIOS_BUCKET, section.audio_path),
+        storage.url(VIDEOS_BUCKET, section.video_path),
+    )
+    return SectionOut(
+        position=section.position,
+        text=section.text,
+        word_count=section.word_count,
+        image_prompt=section.image_prompt,
+        image_url=image_url,
+        audio_url=audio_url,
+        video_url=video_url,
+        video_status=section.video_status,
+        video_error=section.video_error,
+        updated_at=section.updated_at,
+    )
 
 
 @router.get("", response_model=list[SectionOut])
 async def list_sections(script_id: uuid.UUID):
     await deps.script_or_404(script_id)
-    return [await section_out(s) for s in await db.load_sections(script_id)]
+    async with SessionLocal() as session:
+        sections = list((
+            await session.execute(
+                select(Section)
+                .where(Section.state_id == script_id)
+                .order_by(Section.position)
+            )
+        ).scalars())
+    return [await section_out(section) for section in sections]
 
 
 @router.get("/{position}", response_model=SectionOut)
@@ -52,24 +71,66 @@ async def get_section(script_id: uuid.UUID, position: int):
 
 class SectionCreate(BaseModel):
     text: str = Field(min_length=1)
-    position: int | None = Field(default=None, ge=1)     # default: add at the end
+    position: int | None = Field(default=None, ge=1)
 
 
 @router.post("", response_model=SectionOut, status_code=201)
 async def add_section(script_id: uuid.UUID, body: SectionCreate):
-    """Add a section you wrote yourself (at the end, or at `position`, pushing the others down)."""
     from aiagent.nodes import embed, suggest_image_prompt
+
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
-    count = await db.count_sections(script_id)
-    position = body.position or count + 1
-    if position > count + 1:
-        raise HTTPException(422, f"position must be between 1 and {count + 1}")
     text = body.text.strip()
-    embedding, image_prompt = await asyncio.gather(embed(text), suggest_image_prompt(text))
-    section = await db.insert_section(script_id, position, text=text, word_count=len(text.split()),
-                                      embedding=embedding, image_prompt=image_prompt)
-    await db.mark_final_outdated(script_id)
+    embedding, image_prompt = await asyncio.gather(
+        embed(text), suggest_image_prompt(text)
+    )
+
+    async with SessionLocal() as session:
+        count = await session.scalar(
+            select(func.count()).select_from(Section).where(Section.state_id == script_id)
+        )
+        position = body.position or count + 1
+        if position > count + 1:
+            raise HTTPException(422, f"position must be between 1 and {count + 1}")
+
+        # Shift through negative positions to avoid the unique (state_id, position) constraint.
+        await session.execute(
+            update(Section)
+            .where(Section.state_id == script_id, Section.position >= position)
+            .values(position=-(Section.position + 1))
+        )
+        await session.execute(
+            update(Section)
+            .where(Section.state_id == script_id, Section.position < 0)
+            .values(position=-Section.position)
+        )
+
+        section = Section(
+            state_id=script_id,
+            position=position,
+            text=text,
+            word_count=len(text.split()),
+            embedding=embedding,
+            image_prompt=image_prompt,
+            video_status="pending",
+            content_rev=1,
+        )
+        session.add(section)
+        await session.flush()
+        new_count = count + 1
+        await session.execute(
+            update(State)
+            .where(State.id == script_id)
+            .values(total_sections=new_count, sections_completed=new_count)
+        )
+        await session.execute(
+            update(State)
+            .where(State.id == script_id, State.final_video_status == "ready")
+            .values(final_video_status="outdated")
+        )
+        await session.commit()
+        await session.refresh(section)
+
     return await section_out(section)
 
 
@@ -79,70 +140,210 @@ class SectionUpdate(BaseModel):
 
 @router.patch("/{position}", response_model=SectionOut)
 async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate):
-    """Write the section text yourself. Its video is out of date until you build it again."""
     from aiagent.nodes import embed, suggest_image_prompt
+
     await deps.section_or_404(script_id, position)
     text = body.text.strip()
-    embedding, image_prompt = await asyncio.gather(embed(text), suggest_image_prompt(text))
-    section = await db.update_section_content(script_id, position, text=text, word_count=len(text.split()),
-                                              embedding=embedding, image_prompt=image_prompt)
+    embedding, image_prompt = await asyncio.gather(
+        embed(text), suggest_image_prompt(text)
+    )
+
+    async with SessionLocal() as session:
+        await session.execute(
+            update(Section)
+            .where(Section.state_id == script_id, Section.position == position)
+            .values(
+                text=text,
+                word_count=len(text.split()),
+                embedding=embedding,
+                image_prompt=image_prompt,
+                content_rev=Section.content_rev + 1,
+                video_status="pending",
+                video_error=None,
+            )
+        )
+        await session.execute(
+            update(State)
+            .where(State.id == script_id, State.final_video_status == "ready")
+            .values(final_video_status="outdated")
+        )
+        await session.commit()
+        section = (
+            await session.execute(
+                select(Section).where(
+                    Section.state_id == script_id,
+                    Section.position == position,
+                )
+            )
+        ).scalar_one_or_none()
+
     if section is None:
         raise HTTPException(404, f"section {position} not found")
-    await db.mark_final_outdated(script_id)
     return await section_out(section)
 
 
 class RewriteIn(BaseModel):
-    instruction: str = Field(min_length=1)               # "make it funnier", "shorter", ...
+    instruction: str = Field(min_length=1)
 
 
 @router.post("/{position}/rewrite", response_model=SectionOut)
 async def rewrite_section(script_id: uuid.UUID, position: int, body: RewriteIn):
-    """Have the LangGraph rewrite this one section from an instruction. Its video is out of date until you build it again."""
     state = await deps.script_or_404(script_id)
     await deps.section_or_404(script_id, position)
-    count = await db.count_sections(script_id)
-    if not await db.claim_generation(script_id):
+
+    async with SessionLocal() as session:
+        count = await session.scalar(
+            select(func.count()).select_from(Section).where(Section.state_id == script_id)
+        )
+        claimed = (
+            await session.execute(
+                update(State)
+                .where(State.id == script_id, State.generation_status != "generating")
+                .values(generation_status="generating", generation_error=None)
+                .returning(State.id)
+            )
+        ).scalar_one_or_none()
+        await session.commit()
+
+    if claimed is None:
         raise HTTPException(409, "the script is being generated, try again when it is done")
+
     try:
         base = deps.state_from_row(
-            state, user_prompted_sectional_changes={position: body.instruction.strip()},
-            sections_completed=count, total_sections=count, generator_response=None, generated_response_title=None,
-            generated_response_word_count=None, similarity_score=None, current_section=None, next_step=None,
-            rewrite_attempts=0)
+            state,
+            user_prompted_sectional_changes={position: body.instruction.strip()},
+            sections_completed=count,
+            total_sections=count,
+            generator_response=None,
+            generated_response_title=None,
+            generated_response_word_count=None,
+            similarity_score=None,
+            current_section=None,
+            next_step=None,
+            rewrite_attempts=0,
+        )
         await deps.run_graph(base)
     except Exception as exc:
         deps.log.exception("rewrite failed for %s section %s", script_id, position)
-        await db.set_state_fields(script_id, generation_status="ready")
+        async with SessionLocal() as session:
+            await session.execute(
+                update(State)
+                .where(State.id == script_id)
+                .values(generation_status="ready")
+            )
+            await session.commit()
         raise HTTPException(502, f"rewrite failed: {type(exc).__name__}: {exc}")
-    await db.set_state_fields(script_id, generation_status="ready")
-    section = await deps.section_or_404(script_id, position)
-    await db.mark_final_outdated(script_id)
+
+    async with SessionLocal() as session:
+        await session.execute(
+            update(State)
+            .where(State.id == script_id)
+            .values(generation_status="ready")
+        )
+        await session.execute(
+            update(State)
+            .where(State.id == script_id, State.final_video_status == "ready")
+            .values(final_video_status="outdated")
+        )
+        await session.commit()
+        section = (
+            await session.execute(
+                select(Section).where(
+                    Section.state_id == script_id,
+                    Section.position == position,
+                )
+            )
+        ).scalar_one_or_none()
+
+    if section is None:
+        raise HTTPException(404, f"section {position} not found")
     return await section_out(section)
 
 
 @router.post("/{position}/render", response_model=SectionOut, status_code=202)
 async def render_section(script_id: uuid.UUID, position: int):
-    """Builds (or rebuilds) this one section's video in the background. Poll GET /scripts/{id}/sections."""
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
     section = await deps.section_or_404(script_id, position)
     if section.video_status == "processing":
         raise HTTPException(409, "this section's video is already being built")
-    updated = await db.update_section_content(script_id, position)     # bumps the revision, status -> pending
-    await db.mark_final_outdated(script_id)
+
+    async with SessionLocal() as session:
+        await session.execute(
+            update(Section)
+            .where(Section.id == section.id)
+            .values(
+                content_rev=Section.content_rev + 1,
+                video_status="pending",
+                video_error=None,
+            )
+        )
+        await session.execute(
+            update(State)
+            .where(State.id == script_id, State.final_video_status == "ready")
+            .values(final_video_status="outdated")
+        )
+        await session.commit()
+        updated = await session.get(Section, section.id)
+
     deps.spawn(video_service.render_section_video(section.id))
     return await section_out(updated)
 
 
 @router.delete("/{position}", status_code=204)
 async def delete_section(script_id: uuid.UUID, position: int):
-    """Deletes the section and its image, audio and video files; later sections move up by one."""
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
-    section = await db.delete_section(script_id, position)
-    if section is None:
-        raise HTTPException(404, f"section {position} not found")
-    await deps.delete_files({IMAGES_BUCKET: [section.image_path], AUDIOS_BUCKET: [section.audio_path],
-                             VIDEOS_BUCKET: [section.video_path]})
-    await db.mark_final_outdated(script_id)
+
+    async with SessionLocal() as session:
+        section = (
+            await session.execute(
+                select(Section)
+                .where(
+                    Section.state_id == script_id,
+                    Section.position == position,
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if section is None:
+            raise HTTPException(404, f"section {position} not found")
+
+        image_path, audio_path, video_path = (
+            section.image_path, section.audio_path, section.video_path
+        )
+        await session.delete(section)
+        await session.flush()
+
+        # Close the position gap without colliding with the unique constraint.
+        await session.execute(
+            update(Section)
+            .where(Section.state_id == script_id, Section.position >= position + 1)
+            .values(position=-(Section.position - 1))
+        )
+        await session.execute(
+            update(Section)
+            .where(Section.state_id == script_id, Section.position < 0)
+            .values(position=-Section.position)
+        )
+
+        count = await session.scalar(
+            select(func.count()).select_from(Section).where(Section.state_id == script_id)
+        )
+        await session.execute(
+            update(State)
+            .where(State.id == script_id)
+            .values(
+                total_sections=count,
+                sections_completed=count,
+                final_video_status=(
+                    "outdated" if state.final_video_status == "ready"
+                    else state.final_video_status
+                ),
+            )
+        )
+        await session.commit()
+
+    await storage.delete_quiet(IMAGES_BUCKET, [image_path])
+    await storage.delete_quiet(AUDIOS_BUCKET, [audio_path])
+    await storage.delete_quiet(VIDEOS_BUCKET, [video_path])
