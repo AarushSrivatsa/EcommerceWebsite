@@ -65,12 +65,14 @@ async function copyIdea() {
     </div>
 
     <div class="section-image-details">
-      <div v-if="section.imagePrompt" class="image-prompt-card">
+      <div v-if="section.imagePrompt && !section.visualPlan.length" class="image-prompt-card">
         <div class="image-prompt-heading"><AppIcon name="sparkles" :size="14" /> IMAGE IDEA</div>
         <p>{{ section.imagePrompt }}</p>
         <button type="button" class="image-prompt-copy" @click="copyIdea"><AppIcon name="copy" :size="13" /> Copy prompt</button>
       </div>
-      <p v-else class="section-image-no-prompt">No suggested image for this scene.</p>
+      <p v-else class="section-image-no-prompt">
+        {{ section.visualPlan.length ? 'Shared fallback image for storyboard beats without their own visual.' : 'No suggested image for this scene.' }}
+      </p>
       <div class="section-image-actions">
         <button type="button" :disabled="busy" @click="input?.click()"><AppIcon name="upload" :size="14" /> {{ section.imageUrl ? 'Replace image' : 'Upload image' }}</button>
         <button v-if="section.imageUrl" type="button" :disabled="busy" class="remove-image-action" @click="remove"><AppIcon name="trash" :size="14" /> Remove</button>
