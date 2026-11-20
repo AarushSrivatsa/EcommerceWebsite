@@ -6,6 +6,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: T] }>()
 <template>
   <div class="inline-flex rounded-xl border border-white/10 bg-black/20 p-1" role="tablist" :aria-label="ariaLabel">
     <button
+      type="button"
       v-for="o in options"
       :key="o.value"
       role="tab"
