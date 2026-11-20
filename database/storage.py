@@ -1,7 +1,6 @@
 """Supabase Storage access through the official asynchronous Supabase client."""
 import asyncio
 import logging
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 from supabase import AsyncClient, acreate_client
@@ -61,26 +60,18 @@ async def upload_bytes(bucket: str, path: str, data: bytes, content_type: str) -
     return path
 
 
-async def _chunks(file: Path, size: int = 1024 * 1024) -> AsyncIterator[bytes]:
-    """Yield 1 MB chunks so large video files are not loaded into memory."""
-    with file.open("rb") as handle:
-        while chunk := await asyncio.to_thread(handle.read, size):
-            yield chunk
-
-
 async def upload_file(bucket: str, path: str, file: Path, content_type: str) -> str:
-    """Stream a file from disk through the official Supabase Storage SDK."""
+    """Upload a local file using the SDK's supported filesystem-path input."""
     try:
         client = await _get_client()
         await client.storage.from_(bucket).upload(
             path,
-            _chunks(Path(file)),
+            Path(file),
             file_options={"content-type": content_type, "upsert": "true"},
         )
     except Exception as exc:
         raise StorageError(f"upload {bucket}/{path} failed: {exc}") from exc
     return path
-
 
 async def download_to(bucket: str, path: str, dest: Path) -> Path:
     """Download an object with the Supabase SDK and write it to the requested path."""
