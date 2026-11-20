@@ -545,3 +545,43 @@ a { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+
+/* Research-aware writing controls and storyboard */
+.similarity-setting { margin-top: 18px; padding: 14px; border: 1px solid #343d50; border-radius: 11px; background: #151b27; }
+.similarity-setting .range-card-heading, .similarity-setting .settings-range-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.similarity-setting .range-card-heading > strong, .similarity-setting .settings-range-heading > strong { color: #d4c7ff; font-size: 12px; font-variant-numeric: tabular-nums; }
+.similarity-setting .range-input, .similarity-setting input[type="range"] { width: 100%; margin-top: 13px; accent-color: #9b85db; }
+.similarity-setting .field-hint { margin-top: 8px; line-height: 1.65; }
+.range-ends { display: flex; justify-content: space-between; margin-top: 5px; color: #8792a7; font-size: 9px; }
+.similarity-reset, .text-action { display: inline-flex; align-items: center; margin-top: 9px; padding: 0; color: #bba9f1; font-size: 10px; font-weight: 700; }
+.similarity-reset:hover, .text-action:hover { color: #e1d7ff; text-decoration: underline; }
+
+.section-quality-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.section-quality-row > span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #343d4d; border-radius: 7px; color: #9da8bb; background: #171e2a; font-size: 9px; }
+.section-quality-row strong { color: #d4dbe7; font-variant-numeric: tabular-nums; }
+.section-quality-row .section-quality-warning { border-color: #765441; color: #e4b18d; background: #2a211d; }
+.section-quality-row .section-quality-warning strong { color: #f1c09b; }
+
+.visual-beats, .section-sources, .grounding-notes { margin-top: 12px; padding: 11px 12px; border: 1px solid #333d4e; border-radius: 9px; background: #151b27; }
+.visual-beats summary, .section-sources > strong, .grounding-notes summary { color: #c9c1e4; font-size: 10px; font-weight: 760; cursor: pointer; }
+.visual-beats ol { display: grid; gap: 10px; margin: 11px 0 0; padding: 0; list-style: none; }
+.visual-beats li { min-width: 0; padding: 10px; border: 1px solid #30394a; border-radius: 8px; background: #1a2230; }
+.visual-beat-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.visual-beat-heading strong { color: #bca9f0; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+.visual-beat-heading small, .visual-beats li > small { color: #8e9aae; font-size: 9px; }
+.visual-beats li > p { margin-top: 7px; color: #c2cad8; font-size: 10px; line-height: 1.6; }
+.visual-beat-image { display: block; width: min(100%, 340px); aspect-ratio: 16 / 9; margin-top: 10px; border: 1px solid #3b4559; border-radius: 7px; object-fit: cover; background: #111722; }
+.visual-beat-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
+.visual-beat-upload { display: inline-flex; min-height: 28px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #45415f; border-radius: 7px; color: #c5b7f2; background: #26243a; font-size: 9px; font-weight: 700; cursor: pointer; }
+.visual-beat-upload:hover { border-color: #7968aa; background: #302a45; }
+.visual-beat-upload input { display: none; }
+.visual-beat-remove { color: #cf929a; font-size: 9px; font-weight: 700; }
+.visual-beat-remove:hover { color: #f0a7b0; }
+.section-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; }
+.section-sources > strong { flex: 0 0 100%; }
+.section-sources a { color: #a8bde5; font-size: 9px; line-height: 1.5; text-decoration: underline; text-decoration-color: #566783; text-underline-offset: 2px; }
+.section-sources a:hover { color: #d0dfff; }
+.grounding-notes p { margin-top: 8px; color: #b3bece; font-size: 10px; line-height: 1.65; }
+.grounding-notes small { display: block; margin-top: 7px; color: #8793a7; font-size: 9px; line-height: 1.5; }
+
