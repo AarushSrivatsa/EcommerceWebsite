@@ -331,7 +331,11 @@ async def make_visual_plan(text: str) -> list[dict]:
             return clean
     except Exception as exc:
         log.warning("visual beat planning failed: %s", exc)
-    fallback = await suggest_image_prompt(text)
+    try:
+        fallback = await suggest_image_prompt(text)
+    except Exception as exc:
+        log.warning("fallback visual prompt failed: %s", exc)
+        fallback = None
     return [{
         "narration": paragraph,
         "visual": fallback or "A cinematic, clearly illustrative scene that represents the narration",
