@@ -104,6 +104,16 @@ export const projectsStore = {
     await this.refreshProject(id)
   },
 
+  async setVisualBeatImage(id: string, position: number, beatIndex: number, file: File) {
+    setSection(id, await service.setVisualBeatImage(id, position, beatIndex, file))
+    await this.refreshProject(id)
+  },
+
+  async removeVisualBeatImage(id: string, position: number, beatIndex: number) {
+    setSection(id, await service.removeVisualBeatImage(id, position, beatIndex))
+    await this.refreshProject(id)
+  },
+
   async addSection(id: string, text: string, position?: number) {
     await service.addSection(id, text, position)
     await this.loadSections(id) // positions of later sections shifted
