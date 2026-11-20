@@ -1,8 +1,7 @@
 """Render section videos, then stitch them into a final video.
 
 Phonon and ffmpeg run in worker threads, with one section rendered at a time. Finished files live in Supabase
-Storage; OUTPUT_DIR is temporary workspace and is cleaned after each job.
-"""
+Storage; OUTPUT_DIR is temporary workspace and is cleaned after each job."""
 import asyncio
 import logging
 import shutil
