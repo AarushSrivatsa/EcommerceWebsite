@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useToast } from '@/lib/toast'
 import { errorMessage } from '@/services/api'
 import { projectsStore } from '@/stores/projectsStore'
@@ -14,6 +14,13 @@ const emit = defineEmits<{ changed: [] }>()
 const { push } = useToast()
 const input = ref<HTMLInputElement | null>(null)
 const busy = ref(false)
+
+const previewImageUrl = computed(() =>
+  props.section.imageUrl ??
+  (props.section.renderMode === 'image'
+    ? props.section.visualPlan.find((beat) => beat.imageUrl)?.imageUrl ?? null
+    : null),
+)
 
 const ALLOWED = ['.jpg', '.jpeg', '.png', '.webp', '.bmp'] // same list as the backend
 const MAX_MB = 15
@@ -96,7 +103,7 @@ async function copyIdea() {
 
   <div class="section-image-row">
     <div class="section-image-preview">
-      <img v-if="section.imageUrl" :src="section.imageUrl" :alt="'Image for section ' + section.position" loading="lazy" />
+      <img v-if="previewImageUrl" :src="previewImageUrl" :alt="'Image for section ' + section.position" loading="lazy" />
       <button v-else type="button" :disabled="busy || section.videoStatus === 'processing'" class="section-image-empty" @click="input?.click()">
         <AppIcon name="image" :size="21" />
         <span>{{ section.renderMode === 'image' ? 'Add the single scene image' : 'Add a fallback scene image' }}</span>
@@ -117,7 +124,7 @@ async function copyIdea() {
       <div class="section-image-actions">
         <button type="button" :disabled="busy || section.videoStatus === 'processing'" @click="input?.click()">
           <AppIcon name="upload" :size="14" />
-          {{ section.imageUrl ? 'Replace image' : 'Upload image' }}
+          {{ previewImageUrl ? 'Replace image' : 'Upload image' }}
         </button>
         <button v-if="section.imageUrl" type="button" :disabled="busy || section.videoStatus === 'processing'" class="remove-image-action" @click="remove">
           <AppIcon name="trash" :size="14" /> Remove
