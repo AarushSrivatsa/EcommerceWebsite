@@ -101,7 +101,7 @@ class YoutubeChannel(Base):
     is_selected: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
-EMBEDDING_DIM = 384      # bge-small-en-v1.5; a pgvector column has a fixed length, so this must match nodes.EMBEDDING_MODEL
+EMBEDDING_DIM = 384  # Must match aiagent.nodes.EMBEDDING_MODEL.
 
 
 class Section(Base):
@@ -112,7 +112,7 @@ class Section(Base):
     position: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     word_count: Mapped[int] = mapped_column(Integer)
-    embedding = mapped_column(Vector(EMBEDDING_DIM))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
     image_prompt: Mapped[str | None] = mapped_column(Text)    # suggested visual, written by the LLM
 
     # storage paths (inside the images / audios / videos buckets)
