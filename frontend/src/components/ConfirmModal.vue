@@ -10,16 +10,10 @@ const emit = defineEmits<{ confirm: []; cancel: [] }>()
 
 <template>
   <BaseModal :title="title" width-class="max-w-md" @close="emit('cancel')">
-    <p class="text-sm leading-relaxed text-zinc-300">{{ message }}</p>
+    <p class="modal-message">{{ message }}</p>
     <template #footer>
-      <button class="rounded-lg px-3.5 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/5" @click="emit('cancel')">Cancel</button>
-      <button
-        class="rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition"
-        :class="danger ? 'bg-rose-600 hover:bg-rose-500' : 'bg-brand-600 hover:bg-brand-500'"
-        @click="emit('confirm')"
-      >
-        {{ confirmLabel }}
-      </button>
+      <button class="modal-cancel" @click="emit('cancel')">Cancel</button>
+      <button class="modal-confirm" :class="{ 'modal-confirm-danger': danger }" @click="emit('confirm')">{{ confirmLabel }}</button>
     </template>
   </BaseModal>
 </template>
