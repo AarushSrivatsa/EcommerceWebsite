@@ -2,7 +2,6 @@
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
 python-multipart==0.0.33
-httpx==0.28.1
 langchain-groq==1.1.3
 langchain-core==1.7.6
 langgraph==1.2.20
@@ -19,5 +18,4 @@ argon2-cffi==25.1.0
 cryptography==50.0.2
 google-api-python-client==2.202.0
 google-auth==2.62.2
-google-auth-oauthlib==1.5.0       # imported by youtube_uploader.py
 supabase[httpx]==2.34.1          # official Supabase Python SDK
