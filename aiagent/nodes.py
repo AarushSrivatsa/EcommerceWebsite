@@ -524,7 +524,7 @@ async def writer_node(state: BaseState) -> dict:
         "generator_response": text,
         "generated_response_title": title,
         "generated_response_word_count": len(text.split()),
-        "similarity_score": None if nearest is None else float(1 - nearest),
+        "similarity_score": None if nearest is None else max(0.0, min(1.0, float(1 - nearest))),
         "grounding_score": grounding_score,
         "grounding_feedback": grounding_feedback,
         "retrieved_sources": sources,
