@@ -4,10 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from langgraph.graph import END
+
 from aiagent import nodes
-from aiagent.nodes import router_node
-from aiagent.edges import route_after_router
 from aiagent.BaseState import BaseState
+from aiagent.edges import route_after_router
+from aiagent.nodes import router_node
 
 
 async def test_router():
