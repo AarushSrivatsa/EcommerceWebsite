@@ -66,6 +66,10 @@ class State(Base):
     voice_model: Mapped[str | None] = mapped_column(Text)
     current_node: Mapped[str | None] = mapped_column(Text)
 
+    research_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    research_status: Mapped[str] = mapped_column(Text, default="pending", server_default="pending")
+    research_error: Mapped[str | None] = mapped_column(Text)
+
     generation_status: Mapped[str] = mapped_column(
         Text, default="ready", server_default="ready"
     )
@@ -114,6 +118,12 @@ class Section(Base):
     word_count: Mapped[int] = mapped_column(Integer)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
     image_prompt: Mapped[str | None] = mapped_column(Text)
+    sources: Mapped[list | None] = mapped_column(JSONB)
+    visual_plan: Mapped[list | None] = mapped_column(JSONB)
+    similarity_score: Mapped[float | None] = mapped_column(Float)
+    similarity_threshold: Mapped[float | None] = mapped_column(Float)
+    grounding_score: Mapped[float | None] = mapped_column(Float)
+    grounding_feedback: Mapped[str | None] = mapped_column(Text)
 
     image_path: Mapped[str | None] = mapped_column(Text)
     audio_path: Mapped[str | None] = mapped_column(Text)
@@ -124,3 +134,20 @@ class Section(Base):
     )
     video_error: Mapped[str | None] = mapped_column(Text)
     content_rev: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class ResearchChunk(Base):
+    """A source excerpt indexed for project-scoped semantic retrieval."""
+    __tablename__ = "research_chunks"
+    __table_args__ = (UniqueConstraint("state_id", "source_url", "chunk_index"),)
+
+    state_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("states.id", ondelete="CASCADE"), index=True
+    )
+    source_url: Mapped[str] = mapped_column(Text)
+    source_title: Mapped[str] = mapped_column(Text)
+    source_domain: Mapped[str | None] = mapped_column(Text)
+    chunk_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    content: Mapped[str] = mapped_column(Text)
+    search_score: Mapped[float | None] = mapped_column(Float)
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
