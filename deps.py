@@ -1,61 +1,71 @@
-"""Helpers every router uses: lookups that 404, background jobs, and the LangGraph instance."""
+"""Shared FastAPI dependencies and background task management."""
 import asyncio
 import logging
 import uuid
 
 from fastapi import HTTPException
+from sqlalchemy import select, update
 
-import database.database as db
 import memory
 import database.storage as storage
 from aiagent.BaseState import BaseState
+from database.initialization import SessionLocal
+from database.models import Section, State
 
 log = logging.getLogger("api")
 
 RECURSION_LIMIT = 2000
-GENERATION_TIMEOUT = 45 * 60       # seconds; a job that takes longer is marked failed, and "Continue writing" picks it up
-graph = None                       # set once at startup by main.py (deps.graph = build_graph())
-
+GENERATION_TIMEOUT = 45 * 60
+graph = None
 _tasks: set[asyncio.Task] = set()
 
 
 def spawn(coro) -> None:
-    """Run a coroutine in the background (kept referenced so it is not garbage collected)."""
     task = asyncio.create_task(coro)
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
 
 
-# ── lookups ───────────────────────────────────────────────────────────────────
-async def script_or_404(script_id: uuid.UUID) -> db.State:
-    state = await db.get_state(script_id)
+async def script_or_404(script_id: uuid.UUID) -> State:
+    async with SessionLocal() as session:
+        state = await session.get(State, script_id)
     if state is None:
         raise HTTPException(404, "script not found")
     return state
 
 
-async def section_or_404(script_id: uuid.UUID, position: int) -> db.Section:
-    section = await db.get_section(script_id, position)
+async def section_or_404(script_id: uuid.UUID, position: int) -> Section:
+    async with SessionLocal() as session:
+        section = (
+            await session.execute(
+                select(Section).where(
+                    Section.state_id == script_id,
+                    Section.position == position,
+                )
+            )
+        ).scalar_one_or_none()
     if section is None:
         raise HTTPException(404, f"section {position} not found")
     return section
 
 
-def require_idle(state: db.State) -> None:
+def require_idle(state: State) -> None:
     if state.generation_status == "generating":
         raise HTTPException(409, "the script is being generated, try again when it is done")
 
 
-# ── storage + rendering ───────────────────────────────────────────────────────
 async def delete_files(files: dict[str, list[str]]) -> None:
     for bucket, paths in files.items():
         await storage.delete_quiet(bucket, paths)
 
 
-# ── LangGraph ─────────────────────────────────────────────────────────────────
-def state_from_row(row: db.State, **update) -> BaseState:
-    values = {name: getattr(row, name) for name in BaseState.model_fields if getattr(row, name) is not None}
-    return BaseState(**values).model_copy(update=update)
+def state_from_row(row: State, **changes) -> BaseState:
+    values = {
+        name: getattr(row, name)
+        for name in BaseState.model_fields
+        if getattr(row, name) is not None
+    }
+    return BaseState(**values).model_copy(update=changes)
 
 
 async def run_graph(base: BaseState) -> None:
@@ -63,13 +73,25 @@ async def run_graph(base: BaseState) -> None:
 
 
 async def generation_job(base: BaseState) -> None:
-    """Writes all sections (the caller has already claimed generation_status='generating')."""
     memory.report(f"generation start ({base.id})")
     try:
         await asyncio.wait_for(run_graph(base), GENERATION_TIMEOUT)
     except Exception as exc:
         log.exception("generation failed for %s", base.id)
         error = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-        await db.set_state_fields(base.id, generation_status="failed", generation_error=error[:500])
+        async with SessionLocal() as session:
+            await session.execute(
+                update(State)
+                .where(State.id == base.id)
+                .values(generation_status="failed", generation_error=error[:500])
+            )
+            await session.commit()
         return
-    await db.set_state_fields(base.id, generation_status="ready")
+
+    async with SessionLocal() as session:
+        await session.execute(
+            update(State)
+            .where(State.id == base.id)
+            .values(generation_status="ready")
+        )
+        await session.commit()
