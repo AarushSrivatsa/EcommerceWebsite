@@ -135,6 +135,8 @@ class Section(Base):
     image_path: Mapped[str | None] = mapped_column(Text)
     audio_path: Mapped[str | None] = mapped_column(Text)
     video_path: Mapped[str | None] = mapped_column(Text)
+    credits_path: Mapped[str | None] = mapped_column(Text)
+    subtitle_path: Mapped[str | None] = mapped_column(Text)
 
     video_status: Mapped[str] = mapped_column(
         Text, default="pending", server_default="pending"

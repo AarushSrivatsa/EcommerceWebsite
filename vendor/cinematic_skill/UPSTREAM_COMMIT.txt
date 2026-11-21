@@ -1,0 +1,4 @@
+Moh4696/cinematic-skill
+Upstream commit: bf435561c6203f90f971300efe952b68b5ec3417
+Source: https://github.com/Moh4696/cinematic-skill
+Licence: MIT (see LICENSE)

@@ -322,7 +322,7 @@ async function removeProject() {
 
             <details v-if="s.renderMode === 'cinematic' && s.visualPlan.length" class="visual-beats">
               <summary>Visual direction · {{ s.visualPlan.length }} beats</summary>
-              <p class="cinematic-free-note">Every beat becomes animated camera movement and motion graphics for free. Upload a photo when you want a real image placed into the scene.</p>
+              <p class="cinematic-free-note">Cinematic Skill searches Wikimedia Commons for real, freely reusable photographs and archival images, then builds the camera moves, visual board, sound effects and captions automatically. Uploads are optional overrides.</p>
               <ol>
                 <li v-for="(beat, beatIndex) in s.visualPlan" :key="beatIndex">
                   <div class="visual-beat-heading">
@@ -332,6 +332,19 @@ async function removeProject() {
                   <p>{{ beat.visual }}</p>
                   <small v-if="beat.onScreenText">On-screen text: {{ beat.onScreenText }}</small>
                   <img v-if="beat.imageUrl" :src="beat.imageUrl" :alt="`Visual for section ${s.position}, beat ${beatIndex + 1}`" class="visual-beat-image" loading="lazy" />
+                  <div v-if="beat.imageOrigin === 'commons' && beat.imageTitle" class="visual-beat-credit">
+                    <small>ARCHIVE IMAGE</small>
+                    <a v-if="beat.imageSourceUrl" :href="beat.imageSourceUrl" target="_blank" rel="noopener noreferrer">{{ beat.imageTitle }}</a>
+                    <strong v-else>{{ beat.imageTitle }}</strong>
+                    <span v-if="beat.imageCredit">Credit: {{ beat.imageCredit }}</span>
+                    <span v-if="beat.imageLicense">
+                      Licence:
+                      <a v-if="beat.imageLicenseUrl" :href="beat.imageLicenseUrl" target="_blank" rel="noopener noreferrer">{{ beat.imageLicense }}</a>
+                      <strong v-else>{{ beat.imageLicense }}</strong>
+                    </span>
+                  </div>
+                  <small v-else-if="beat.imageOrigin === 'user'" class="visual-beat-user-credit">Your uploaded image</small>
+
                   <div class="visual-beat-actions">
                     <label class="visual-beat-upload">
                       <AppIcon name="upload" :size="13" />
@@ -371,6 +384,16 @@ async function removeProject() {
               preload="metadata"
               class="section-video-player"
             />
+            <div v-if="s.videoStatus === 'ready' && (s.creditsUrl || s.subtitleUrl)" class="section-media-downloads">
+              <a v-if="s.creditsUrl" :href="s.creditsUrl" target="_blank" rel="noopener noreferrer" download>Image credits and licences</a>
+              <a v-if="s.subtitleUrl" :href="s.subtitleUrl" target="_blank" rel="noopener noreferrer" download>Download subtitles (.srt)</a>
+            </div>
+
+            <div v-if="s.videoStatus === 'ready' && (s.creditsUrl || s.subtitleUrl)" class="section-media-downloads">
+              <a v-if="s.creditsUrl" :href="s.creditsUrl" target="_blank" rel="noopener noreferrer" download>Image credits and licences</a>
+              <a v-if="s.subtitleUrl" :href="s.subtitleUrl" target="_blank" rel="noopener noreferrer" download>Download subtitles (.srt)</a>
+            </div>
+
             <p v-else-if="s.videoStatus === 'processing'" class="section-video-note"><AppIcon name="loader" :size="14" class="animate-spin" /> {{ s.renderMode === 'cinematic' ? 'Rendering with Cinematic Skill…' : 'Building the single-image scene…' }}</p>
             <p v-else-if="s.videoStatus === 'pending'" class="section-video-note">{{ s.renderMode === 'cinematic' ? 'This Cinematic Skill scene has not been rendered yet.' : 'This single-image scene has not been rendered yet.' }}</p>
 

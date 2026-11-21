@@ -97,7 +97,7 @@ async function copyIdea() {
     <p class="section-render-mode-description">
       {{ section.renderMode === 'image'
         ? 'One still image stays on screen for the entire narration. Upload a scene image below.'
-        : 'Builds animated camera moves, motion graphics and timed storyboard beats. Photos are optional; upload a fallback or individual beat images.' }}
+         : 'Automatically searches Wikimedia Commons for real, freely reusable photos and archival images, then builds the visual board, camera moves, sound effects and captions. Uploads are optional overrides.' }}
     </p>
   </div>
 

@@ -1,49 +1,45 @@
-# Cinematic rendering (free, procedural)
+# Cinematic Skill rendering
 
-The section renderer is adapted from **Cinematic Skill** by Moh4696:
-https://github.com/Moh4696/cinematic-skill
+The application now vendors the upstream **Cinematic Skill** project by Moh4696 under its MIT licence. The complete upstream skill instructions, engine, asset tools, map builder, sound tools, caption tools, references and example projects are kept in `vendor/cinematic_skill/`.
 
-The upstream engine is vendored at `vendor_cinematic_engine.py` under its MIT licence.
-See `vendor/CINEMATIC_SKILL_LICENSE` for the required copyright and permission notice.
-Upstream source revision: `bf435561c6203f90f971300efe952b68b5ec3417`.
+Upstream project: https://github.com/Moh4696/cinematic-skill  
+Upstream revision: `bf435561c6203f90f971300efe952b68b5ec3417`  
+Licence: `vendor/cinematic_skill/LICENSE`
 
-## What this adds
+## What happens when a Cinematic Skill section is rendered
 
-- A continuous camera move through a designed visual board for each narration section.
-- Uploaded photos are treated as pinned prints; beats without a photo use animated typographic cards.
-- Each visual beat appears using the actual per-paragraph duration returned by the final Phonon voice pass.
-- FFmpeg exports H.264/AAC MP4 at 1280x720 and 24 fps.
+1. **Storyboard planning** — the section planner gives every narration paragraph a distinct visual hero, a Wikimedia Commons query, a visual type, camera direction and any explicit geographic places.
+2. **Automatic archive discovery** — the app calls the upstream Wikimedia Commons search/metadata client. It selects suitable images only when the licence is Public Domain, CC0, CC BY or CC BY-SA. Non-free and unclear licences are not silently accepted.
+3. **Attribution and caching** — the image is copied to Supabase Storage and its title, creator, source page, licence and licence URL are saved on the visual beat. Rebuilds reuse the selected image; they do not repeatedly search for the same image.
+4. **Asset preparation** — upstream `prep_assets.py` grades and prepares the photos and generates the board textures. Explicitly named map places can be geocoded with OpenStreetMap Nominatim, then `make_map.py` creates a projected world map using world-atlas.
+5. **Scene composition** — the generated project contains the upstream `script.json`, `photos.json`, `audio/timing.json` and an app-composed `scene.py`. It uses the real upstream engine classes: `Film`, `Print`, `Card`, `PaperDoc`, `BigText`, `Counter`, `Stamp`, `PenMark`, `StringLine`, `FilmFrame`, `GeoMap`, `MapPin` and `Route`.
+6. **Cinematic render** — the upstream Skia renderer creates a continuous camera move, archive board, timed beats, maps and film finish. FFmpeg encodes at 1280×720, 30 fps, CRF 18.
+7. **Sound and finishing** — upstream `build_sfx.py` synthesises effects from the scene cues; `mix_soundtrack.py` mixes them with the Phonon narration; `burn_captions.py --srt-only` creates SRT subtitles; `fetch_commons.py credits` writes image credits.
+8. **Delivery** — MP4, narration audio, image-credit Markdown and SRT subtitles are uploaded to Supabase Storage. The section interface shows the source/licence for every Commons image and links to the credits and captions.
 
-## Important distinction
+## Image-source policy
 
-This is **not** text-to-video diffusion and does not fabricate photorealistic moving footage.
-It is a local procedural renderer: Skia draws the board, cards, camera movement, image treatments and film finish; FFmpeg encodes the frames and voiceover. It has no per-generation API charge and requires no `FAL_KEY`.
-Users can upload their own images per beat or let the code-rendered motion graphics carry the scene.
+- Automatic sourcing currently uses Wikimedia Commons, not generic Google Images.
+- The app only accepts Public Domain, CC0, CC BY and CC BY-SA material. CC BY / CC BY-SA attribution is retained with the scene.
+- Uploaded photos are optional overrides. If Commons has no suitable result, the scene uses the section fallback image when one exists, otherwise the Cinematic Skill's designed document/card/typography treatment.
+- Recreated documents are visibly stamped **RECREATION**; they are not presented as authentic archive documents.
+- This workflow does not generate photorealistic AI images or AI video. The upstream skill's separate `motion-assets` workflow is not included because it is a separate tool and may require a paid generation provider.
 
-## Runtime dependencies
+## Other mode
 
-`skia-python`, `numpy`, `Pillow` and the system `ffmpeg` binary. No new environment variables or database migration are required.
+The per-section **Single image** mode remains available and is unchanged: it creates a 1920×1080, 30 fps still-image scene with the narration. Cinematic Skill is the default for existing sections.
 
+## Small Render instance notes
 
-## Per-section output modes
+- The full renderer runs with one worker in-process to avoid an additional multiprocessing Python renderer.
+- ONNX, BLAS and FFmpeg thread counts are bounded.
+- Large Supabase assets stream to disk rather than being buffered in API memory.
+- The 1280×720 canvas is retained at 30 fps; only the worker count is reduced.
+- The 512 MB target is not a guarantee. Confirm cgroup peak memory and Render service metrics during real renders; rendering long sections may still exceed the free instance's memory or execution limits.
 
-Every section can use one of two render modes:
+## Upstream workflow scope
 
-- **Single image** creates a 1920×1080, 30 fps still-image scene with the section narration. It uses the section image, or the first uploaded storyboard image as a fallback.
-- **Cinematic Skill** creates the existing 1280×720, 24 fps animated photo-board / typography scene. It can use individual beat photos, a shared section image, or procedural cards when no photo is provided.
-
-The selected mode is stored on the section record. Existing sections default to Cinematic Skill, so existing projects keep their previous behavior. Changing modes marks that section and the assembled film as needing a rebuild; it does not delete uploaded images.
-
-## Small-instance safeguards
-
-- Heavy model work is serialized through the shared memory lock.
-- FastEmbed uses one ONNX thread and bounded embedding batches.
-- Supabase media downloads stream to disk rather than buffering entire MP4 files in the API process.
-- User images are validated as actual image files and limited to 16 megapixels before upload.
-- The health endpoint and memory log lines report process RSS plus cgroup container usage/limit/peak where the host exposes those metrics.
-
-These measures reduce avoidable memory spikes; they are not a guarantee that every workload fits in 512 MB. Confirm peaks in Render's Metrics view using representative projects.
-
+Cinematic Skill is an agent skill, not a standalone text-to-video API. The application supplies the narration, timing and LLM-generated beat plan, then runs the upstream asset and rendering tools automatically. The upstream research, story-writing and approval guidance is preserved in `SKILL.md` and its references; the app's existing research and script-generation graph remains responsible for factual research and narration.
 
 ## CORS and API exposure
 

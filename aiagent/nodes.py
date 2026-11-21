@@ -301,19 +301,28 @@ async def verify_section_grounding(text: str, sources: list[dict]) -> tuple[floa
 
 
 async def make_visual_plan(text: str) -> list[dict]:
-    """Create one visual hero per spoken paragraph, following the cinematic-skill beat discipline."""
+    """Create a source-aware storyboard that can be illustrated from real web assets."""
     paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text.strip()) if part.strip()]
     if not paragraphs:
         return []
     try:
         reply = await ask(summary_llm, [
             ("system",
-             "Create a concise storyboard for a narrated video. Return JSON only with a 'beats' array. "
-             "Return exactly one beat for each supplied paragraph, in order. Each beat has: "
-             "'visual' (specific visual subject/action, no text in the image, no real-person likeness), "
-             "'on_screen_text' (optional, max 5 words), and 'camera' (simple movement). "
-             "One clear visual hero per paragraph. AI imagery is illustration, never proof of a real event."),
-            ("user", json.dumps({"paragraphs": paragraphs}, ensure_ascii=False)),
+             "Plan a premium documentary / explainer film using the open-source Cinematic Skill workflow. "
+             "Return JSON only with a 'beats' array, exactly one beat per supplied paragraph, in order. "
+             "Each beat must have: 'visual' (specific thing the viewer should see), "
+             "'image_search_query' (a concise Wikimedia Commons search query for an authentic, relevant, "
+             "freely reusable photograph, archive image, object, map or diagram; name the actual subject, "
+             "person, place, event or object, not a generic mood), 'image_kind' ('photo', 'paper', 'doc' or 'color'), "
+             "'on_screen_text' (optional, max 5 words), 'camera' (a purposeful camera move), "
+             "'hero_type' ('archive', 'document', 'map', 'diagram', 'object' or 'card'), "
+             "'map_places' (zero to three geographic place names explicitly relevant to this paragraph; "
+             "only places actually named or unambiguously referenced, never guessed). "
+             "Prefer real historical / documentary images over decorative graphics. Never invent a source, "
+             "never use an illustrative image as evidence, and never invent a real person's likeness. "
+             "If a real image is unlikely to exist, search for the relevant object, place, scientific diagram "
+             "or primary-source document. Keep each visual distinct from neighbouring beats."),
+            ("user", json.dumps({"paragraphs": paragraphs, "topic": text[:1200]}, ensure_ascii=False)),
         ])
         data = json.loads(reply[reply.find("{"):reply.rfind("}") + 1])
         beats = data.get("beats", [])
@@ -322,23 +331,27 @@ async def make_visual_plan(text: str) -> list[dict]:
             for paragraph, beat in zip(paragraphs, beats):
                 if not isinstance(beat, dict) or not str(beat.get("visual", "")).strip():
                     raise ValueError("invalid visual beat")
+                visual = str(beat["visual"])[:500]
                 clean.append({
                     "narration": paragraph,
-                    "visual": str(beat["visual"])[:500],
+                    "visual": visual,
+                    "image_search_query": str(beat.get("image_search_query") or visual)[:180],
+                    "image_kind": beat.get("image_kind") if beat.get("image_kind") in {"photo", "paper", "doc", "color"} else "photo",
+                    "hero_type": beat.get("hero_type") if beat.get("hero_type") in {"archive", "document", "map", "diagram", "object", "card"} else "archive",
+                    "map_places": [str(place)[:100] for place in beat.get("map_places", [])[:3] if isinstance(place, str) and place.strip()] if isinstance(beat.get("map_places"), list) else [],
                     "on_screen_text": str(beat.get("on_screen_text") or "")[:80],
                     "camera": str(beat.get("camera") or "slow push-in")[:100],
                 })
             return clean
     except Exception as exc:
         log.warning("visual beat planning failed: %s", exc)
-    try:
-        fallback = await suggest_image_prompt(text)
-    except Exception as exc:
-        log.warning("fallback visual prompt failed: %s", exc)
-        fallback = None
     return [{
         "narration": paragraph,
-        "visual": fallback or "A cinematic, clearly illustrative scene that represents the narration",
+        "visual": paragraph,
+        "image_search_query": paragraph[:180],
+        "image_kind": "photo",
+        "hero_type": "archive",
+        "map_places": [],
         "on_screen_text": "",
         "camera": "slow push-in",
     } for paragraph in paragraphs]

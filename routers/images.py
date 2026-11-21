@@ -191,8 +191,16 @@ async def set_visual_beat_image(
                 else:
                     replaced_path = current_plan[beat_index].get("image_path")
                     current_plan[beat_index] = {
-                        **current_plan[beat_index],
+                        **{
+                            key: value for key, value in current_plan[beat_index].items()
+                            if key not in {
+                                "image_title", "image_credit", "image_license",
+                                "image_license_url", "image_source_url", "image_date",
+                                "image_description", "image_origin",
+                            }
+                        },
                         "image_path": path,
+                        "image_origin": "user",
                     }
                     current.visual_plan = current_plan
                     current.content_rev += 1
@@ -253,7 +261,7 @@ async def remove_visual_beat_image(
                     current_plan[beat_index] = {
                         key: value
                         for key, value in current_plan[beat_index].items()
-                        if key not in {"image_path", "image_url"}
+                        if key not in {"image_path", "image_url", "image_title", "image_credit", "image_license", "image_license_url", "image_source_url", "image_date", "image_description", "image_origin"}
                     }
                     current.visual_plan = current_plan
                     current.content_rev += 1

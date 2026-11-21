@@ -26,6 +26,8 @@ class SectionOut(BaseModel):
     image_url: str | None
     audio_url: str | None
     video_url: str | None
+    credits_url: str | None
+    subtitle_url: str | None
     video_status: str
     render_mode: str
     video_error: str | None
@@ -51,10 +53,12 @@ async def section_out(section: Section) -> SectionOut:
         }
         for beat, url in zip(visual_plan, beat_urls)
     ]
-    image_url, audio_url, video_url = await asyncio.gather(
+    image_url, audio_url, video_url, credits_url, subtitle_url = await asyncio.gather(
         storage.url(IMAGES_BUCKET, section.image_path),
         storage.url(AUDIOS_BUCKET, section.audio_path),
         storage.url(VIDEOS_BUCKET, section.video_path),
+        storage.url(VIDEOS_BUCKET, section.credits_path),
+        storage.url(VIDEOS_BUCKET, section.subtitle_path),
     )
     return SectionOut(
         position=section.position,
@@ -64,6 +68,8 @@ async def section_out(section: Section) -> SectionOut:
         image_url=image_url,
         audio_url=audio_url,
         video_url=video_url,
+        credits_url=credits_url,
+        subtitle_url=subtitle_url,
         video_status=section.video_status,
         render_mode=getattr(section, "render_mode", "cinematic") or "cinematic",
         video_error=section.video_error,
@@ -410,8 +416,9 @@ async def delete_section(script_id: uuid.UUID, position: int):
         if section is None:
             raise HTTPException(404, f"section {position} not found")
 
-        image_path, audio_path, video_path = (
-            section.image_path, section.audio_path, section.video_path
+        image_path, audio_path, video_path, credits_path, subtitle_path = (
+            section.image_path, section.audio_path, section.video_path,
+            section.credits_path, section.subtitle_path,
         )
         beat_image_paths = [
             beat.get("image_path") for beat in (section.visual_plan or [])
@@ -451,4 +458,4 @@ async def delete_section(script_id: uuid.UUID, position: int):
 
     await storage.delete_quiet(IMAGES_BUCKET, [image_path, *beat_image_paths])
     await storage.delete_quiet(AUDIOS_BUCKET, [audio_path])
-    await storage.delete_quiet(VIDEOS_BUCKET, [video_path])
+    await storage.delete_quiet(VIDEOS_BUCKET, [video_path, credits_path, subtitle_path])

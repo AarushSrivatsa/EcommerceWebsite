@@ -1,6 +1,7 @@
 """Render section videos and stitch them into a final video."""
 import asyncio
 import logging
+import mimetypes
 import re
 import shutil
 import subprocess
@@ -18,6 +19,7 @@ from database.initialization import SessionLocal
 from database.models import Section, State
 from media.voice import DEFAULT_VOICE, build_image_video, generate_voiceover
 from media.cinematic_renderer import render_cinematic_video
+from media.cinematic_assets import search_and_download
 
 log = logging.getLogger("video_service")
 _render_lock = asyncio.Lock()
@@ -105,6 +107,11 @@ async def render_section_video(section_id: uuid.UUID) -> None:
             return
 
         folder = _scratch_dir()
+        uploaded_audio_path = None
+        uploaded_video_path = None
+        uploaded_credits_path = None
+        uploaded_subtitle_path = None
+        uncommitted_asset_paths: list[str] = []
         try:
             visual_plan = section.visual_plan or []
             paragraphs = [
@@ -115,6 +122,7 @@ async def render_section_video(section_id: uuid.UUID) -> None:
             render_mode = getattr(section, "render_mode", "cinematic") or "cinematic"
 
             single_image = None
+            beat_images: list[Path | None] = []
             if render_mode == "image":
                 image_path = section.image_path or next(
                     (beat.get("image_path") for beat in visual_plan if beat.get("image_path")),
@@ -122,41 +130,119 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                 )
                 if not image_path:
                     raise RuntimeError(
-                        "Single image mode needs one scene image. Upload a section image, "
-                        "or upload at least one storyboard image."
+                        "Single image mode needs one scene image. Upload a scene image "
+                        "or switch to Cinematic Skill for automatic web-sourced visuals."
                     )
                 single_image = await storage.download_to(
                     IMAGES_BUCKET,
                     image_path,
                     folder / f"single-image{Path(image_path).suffix}",
                 )
-                beat_images: list[Path | None] = []
-                use_beats = False
             else:
-                use_beats = bool(visual_plan) and len(visual_plan) == paragraph_count
-                # Missing beat images are intentional: Cinematic Skill creates animated
-                # cards and typography for those beats rather than requiring a user photo.
-                beat_images = []
-                if use_beats:
+                # Give the planner one beat per paragraph even if an older section has an
+                # incomplete visual plan. Commons discovery runs only for beats without
+                # a previously selected source or an explicit user-uploaded image.
+                if len(visual_plan) != paragraph_count:
+                    visual_plan = [
+                        {
+                            "narration": paragraph,
+                            "visual": paragraph,
+                            "image_search_query": paragraph[:180],
+                            "image_kind": "photo",
+                            "hero_type": "archive",
+                            "map_places": [],
+                            "on_screen_text": "",
+                            "camera": "slow push-in",
+                        }
+                        for paragraph in paragraphs
+                    ]
+
+                new_asset_paths: list[str] = []
+                uncommitted_asset_paths = new_asset_paths
+                try:
                     for index, beat in enumerate(visual_plan):
-                        image_path = beat.get("image_path") or section.image_path
-                        if image_path:
-                            beat_images.append(await storage.download_to(
+                        existing_path = beat.get("image_path")
+                        if existing_path:
+                            local = await storage.download_to(
                                 IMAGES_BUCKET,
-                                image_path,
-                                folder / f"beat-{index}{Path(image_path).suffix}",
-                            ))
-                        else:
-                            beat_images.append(None)
-                else:
-                    section_image = None
-                    if section.image_path:
-                        section_image = await storage.download_to(
-                            IMAGES_BUCKET,
-                            section.image_path,
-                            folder / f"section-image{Path(section.image_path).suffix}",
+                                existing_path,
+                                folder / f"beat-{index}{Path(existing_path).suffix or '.jpg'}",
+                            )
+                            beat_images.append(local)
+                            continue
+
+                        # The upstream skill searches Wikimedia Commons and refuses
+                        # ambiguous/non-free licences. Uploaded section photos are only
+                        # a fallback when no suitable source image can be found.
+                        query = beat.get("image_search_query") or beat.get("visual") or paragraphs[index]
+                        asset = await asyncio.to_thread(
+                            search_and_download,
+                            query,
+                            folder / "commons",
+                            f"beat-{index + 1:02d}",
                         )
-                    beat_images = [section_image] * paragraph_count
+                        if asset:
+                            local = Path(asset["path"])
+                            object_path = (
+                                f"{state.id}/{section.id}-commons-{index}-"
+                                f"{uuid.uuid4().hex[:8]}{local.suffix}"
+                            )
+                            await storage.upload_file(IMAGES_BUCKET, object_path, local, mimetypes.guess_type(local.name)[0] or "image/jpeg")
+                            new_asset_paths.append(object_path)
+                            log.info(
+                                "Cinematic Skill sourced beat %s from Wikimedia Commons: %s (%s)",
+                                index + 1,
+                                asset.get("title"),
+                                asset.get("license"),
+                            )
+                            beat.update({
+                                "image_path": object_path,
+                                "image_origin": "commons",
+                                "image_title": asset.get("title"),
+                                "image_credit": asset.get("credit"),
+                                "image_license": asset.get("license"),
+                                "image_license_url": asset.get("license_url"),
+                                "image_source_url": asset.get("source_url"),
+                                "image_date": asset.get("date"),
+                                "image_description": asset.get("description"),
+                            })
+                            beat_images.append(local)
+                        elif section.image_path:
+                            log.info("Cinematic Skill using the uploaded section fallback for beat %s", index + 1)
+                            fallback = await storage.download_to(
+                                IMAGES_BUCKET,
+                                section.image_path,
+                                folder / f"fallback-{index}{Path(section.image_path).suffix or '.jpg'}",
+                            )
+                            beat_images.append(fallback)
+                        else:
+                            log.warning("No free Commons image found for beat %s; rendering a designed skill card instead", index + 1)
+                            beat_images.append(None)
+
+                    # Save source attribution on the beat itself so users can inspect
+                    # image origins/licences and future rebuilds reuse the exact assets.
+                    async with SessionLocal() as session:
+                        applied = (
+                            await session.execute(
+                                update(Section)
+                                .where(
+                                    Section.id == section_id,
+                                    Section.content_rev == revision,
+                                )
+                                .values(visual_plan=visual_plan)
+                                .returning(Section.id)
+                            )
+                        ).scalar_one_or_none()
+                        await session.commit()
+                    if applied is None:
+                        await storage.delete_quiet(IMAGES_BUCKET, new_asset_paths)
+                        uncommitted_asset_paths = []
+                        raise RuntimeError("the section changed while cinematic assets were being sourced; retry the render")
+                    uncommitted_asset_paths = []
+                except Exception:
+                    # Keep successfully downloaded assets only when their attribution was
+                    # committed; otherwise remove their temporary Storage copies.
+                    raise
 
             async with memory.heavy:
                 memory.report(f"narration start (section {section.position})")
@@ -186,7 +272,7 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                         output_path=video,
                         duration_sec=voice_timing["duration_sec"],
                         paragraph_durations=voice_timing["paragraph_durations_sec"],
-                        visual_plan=visual_plan if use_beats else [],
+                        visual_plan=visual_plan if render_mode == "cinematic" else [],
                         image_paths=beat_images,
                         project_title=state.user_prompt,
                         section_position=section.position,
@@ -196,8 +282,21 @@ async def render_section_video(section_id: uuid.UUID) -> None:
 
             audio_path = f"{state.id}/{section.id}-{revision}.mp3"
             video_path = f"{state.id}/{section.id}-{revision}.mp4"
+            credits_file = video.with_suffix(".credits.md")
+            subtitle_file = video.with_suffix(".srt")
+            credits_path = f"{state.id}/{section.id}-{revision}-credits.md" if credits_file.is_file() else None
+            subtitle_path = f"{state.id}/{section.id}-{revision}.srt" if subtitle_file.is_file() else None
+
             await storage.upload_file(AUDIOS_BUCKET, audio_path, audio, "audio/mpeg")
+            uploaded_audio_path = audio_path
             await storage.upload_file(VIDEOS_BUCKET, video_path, video, "video/mp4")
+            uploaded_video_path = video_path
+            if credits_path:
+                await storage.upload_file(VIDEOS_BUCKET, credits_path, credits_file, "text/markdown")
+                uploaded_credits_path = credits_path
+            if subtitle_path:
+                await storage.upload_file(VIDEOS_BUCKET, subtitle_path, subtitle_file, "application/x-subrip")
+                uploaded_subtitle_path = subtitle_path
 
             async with SessionLocal() as session:
                 async with session.begin():
@@ -205,22 +304,30 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                     if current is None or current.content_rev != revision:
                         old = None
                     else:
-                        old = (current.audio_path, current.video_path)
+                        old = (current.audio_path, current.video_path, current.credits_path, current.subtitle_path)
                         current.audio_path = audio_path
                         current.video_path = video_path
+                        current.credits_path = credits_path
+                        current.subtitle_path = subtitle_path
                         current.video_status = "ready"
                         current.video_error = None
 
             if old is None:
                 await storage.delete_quiet(AUDIOS_BUCKET, [audio_path])
-                await storage.delete_quiet(VIDEOS_BUCKET, [video_path])
+                await storage.delete_quiet(VIDEOS_BUCKET, [video_path, credits_path, subtitle_path])
             else:
                 if old[0] and old[0] != audio_path:
                     await storage.delete_quiet(AUDIOS_BUCKET, [old[0]])
-                if old[1] and old[1] != video_path:
-                    await storage.delete_quiet(VIDEOS_BUCKET, [old[1]])
+                stale_video_assets = [old_path for old_path in old[1:] if old_path and old_path not in {video_path, credits_path, subtitle_path}]
+                await storage.delete_quiet(VIDEOS_BUCKET, stale_video_assets)
         except Exception as exc:
             log.exception("render failed for section %s", section_id)
+            if uncommitted_asset_paths:
+                await storage.delete_quiet(IMAGES_BUCKET, uncommitted_asset_paths)
+            if uploaded_audio_path:
+                await storage.delete_quiet(AUDIOS_BUCKET, [uploaded_audio_path])
+            if any((uploaded_video_path, uploaded_credits_path, uploaded_subtitle_path)):
+                await storage.delete_quiet(VIDEOS_BUCKET, [uploaded_video_path, uploaded_credits_path, uploaded_subtitle_path])
             async with SessionLocal() as session:
                 await session.execute(
                     update(Section)

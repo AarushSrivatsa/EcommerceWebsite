@@ -26,6 +26,13 @@ export interface VisualBeat {
   onScreenText: string
   camera: string
   imageUrl: string | null
+  imageOrigin?: 'commons' | 'user' | null
+  imageTitle?: string | null
+  imageCredit?: string | null
+  imageLicense?: string | null
+  imageLicenseUrl?: string | null
+  imageSourceUrl?: string | null
+  imageSearchQuery?: string | null
 }
 
 export interface Section {
@@ -35,6 +42,8 @@ export interface Section {
   imagePrompt: string | null
   imageUrl: string | null
   videoUrl: string | null
+  creditsUrl: string | null
+  subtitleUrl: string | null
   videoStatus: SectionVideoStatus
   renderMode: SectionRenderMode
   videoError: string | null

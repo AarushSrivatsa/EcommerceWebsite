@@ -36,12 +36,27 @@ interface SectionDto {
   image_url: string | null
   audio_url: string | null
   video_url: string | null
+  credits_url: string | null
+  subtitle_url: string | null
   video_status: SectionVideoStatus
   render_mode: SectionRenderMode
   video_error: string | null
   updated_at: string | null
   sources: { title: string; url: string; domain: string | null; excerpt: string; similarity: number }[]
-  visual_plan: { narration: string; visual: string; on_screen_text: string; camera: string; image_url?: string | null }[]
+  visual_plan: {
+    narration: string
+    visual: string
+    on_screen_text: string
+    camera: string
+    image_url?: string | null
+    image_origin?: 'commons' | 'user' | null
+    image_title?: string | null
+    image_credit?: string | null
+    image_license?: string | null
+    image_license_url?: string | null
+    image_source_url?: string | null
+    image_search_query?: string | null
+  }[]
   similarity_score: number | null
   similarity_threshold: number | null
   grounding_score: number | null
@@ -93,6 +108,8 @@ function toSection(s: SectionDto): Section {
     imagePrompt: s.image_prompt,
     imageUrl: s.image_url,
     videoUrl: s.video_url,
+    creditsUrl: s.credits_url ?? null,
+    subtitleUrl: s.subtitle_url ?? null,
     videoStatus: s.video_status,
     renderMode: s.render_mode ?? 'cinematic',
     videoError: s.video_error,
@@ -103,6 +120,13 @@ function toSection(s: SectionDto): Section {
       onScreenText: beat.on_screen_text,
       camera: beat.camera,
       imageUrl: beat.image_url ?? null,
+      imageOrigin: beat.image_origin ?? null,
+      imageTitle: beat.image_title ?? null,
+      imageCredit: beat.image_credit ?? null,
+      imageLicense: beat.image_license ?? null,
+      imageLicenseUrl: beat.image_license_url ?? null,
+      imageSourceUrl: beat.image_source_url ?? null,
+      imageSearchQuery: beat.image_search_query ?? null,
     })),
     similarityScore: s.similarity_score,
     similarityThreshold: s.similarity_threshold,
