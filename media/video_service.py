@@ -139,9 +139,8 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                     folder / f"single-image{Path(image_path).suffix}",
                 )
             else:
-                # Give the planner one beat per paragraph even if an older section has an
-                # incomplete visual plan. Commons discovery runs only for beats without
-                # a previously selected source or an explicit user-uploaded image.
+                # One beat per paragraph. Cinematic mode sources its own cleared images;
+                # user uploads are never a fallback or an override.
                 if len(visual_plan) != paragraph_count:
                     visual_plan = [
                         {
@@ -161,7 +160,7 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                 uncommitted_asset_paths = new_asset_paths
                 try:
                     for index, beat in enumerate(visual_plan):
-                        existing_path = beat.get("image_path")
+                        existing_path = beat.get("image_path") if beat.get("image_origin") == "commons" else None
                         if existing_path:
                             local = await storage.download_to(
                                 IMAGES_BUCKET,
@@ -172,8 +171,7 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                             continue
 
                         # The upstream skill searches Wikimedia Commons and refuses
-                        # ambiguous/non-free licences. Uploaded section photos are only
-                        # a fallback when no suitable source image can be found.
+                        # ambiguous/non-free licences. No uploaded fallback is required.
                         query = beat.get("image_search_query") or beat.get("visual") or paragraphs[index]
                         asset = await asyncio.to_thread(
                             search_and_download,
@@ -207,16 +205,8 @@ async def render_section_video(section_id: uuid.UUID) -> None:
                                 "image_description": asset.get("description"),
                             })
                             beat_images.append(local)
-                        elif section.image_path:
-                            log.info("Cinematic Skill using the uploaded section fallback for beat %s", index + 1)
-                            fallback = await storage.download_to(
-                                IMAGES_BUCKET,
-                                section.image_path,
-                                folder / f"fallback-{index}{Path(section.image_path).suffix or '.jpg'}",
-                            )
-                            beat_images.append(fallback)
                         else:
-                            log.warning("No free Commons image found for beat %s; rendering a designed skill card instead", index + 1)
+                            log.info("No cleared Commons image for beat %s; using the Cinematic Skill's native non-photo treatment", index + 1)
                             beat_images.append(None)
 
                     # Save source attribution on the beat itself so users can inspect

@@ -569,6 +569,9 @@ async def push_section_node(state: BaseState) -> dict:
         image_prompt = await suggest_image_prompt(text)
 
     async with SessionLocal() as session:
+        project_render_mode = await session.scalar(
+            select(State.render_mode).where(State.id == state.id)
+        ) or "cinematic"
         previous_visual_plan = await session.scalar(
             select(Section.visual_plan).where(
                 Section.state_id == state.id,
@@ -590,6 +593,7 @@ async def push_section_node(state: BaseState) -> dict:
         image_prompt=image_prompt,
         sources=state.retrieved_sources or [],
         visual_plan=visual_plan,
+        render_mode=project_render_mode,
         similarity_score=state.similarity_score,
         similarity_threshold=similarity_limit(state),
         grounding_score=state.grounding_score,
@@ -606,6 +610,7 @@ async def push_section_node(state: BaseState) -> dict:
             "image_prompt": stmt.excluded.image_prompt,      # image_path is not touched
             "sources": stmt.excluded.sources,
             "visual_plan": stmt.excluded.visual_plan,
+            "render_mode": stmt.excluded.render_mode,
             "similarity_score": stmt.excluded.similarity_score,
             "similarity_threshold": stmt.excluded.similarity_threshold,
             "grounding_score": stmt.excluded.grounding_score,

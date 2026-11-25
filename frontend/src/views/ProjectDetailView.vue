@@ -115,10 +115,6 @@ async function confirmDeleteSection() {
   sectionToDelete.value = null
   if (position !== null) await run(() => projectsStore.removeSection(id.value, position))
 }
-async function rerender(position: number) {
-  if (await run(() => projectsStore.rerenderSection(id.value, position))) watchRender()
-}
-
 // ---- request changes (AI rewrite) ----
 const changeTarget = ref<number | null>(null)
 const rewriting = ref(false)
@@ -148,40 +144,6 @@ async function addSection(text: string) {
   }
 }
 
-async function uploadBeatImage(position: number, beatIndex: number, event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
-  if (!allowed.some((extension) => file.name.toLowerCase().endsWith(extension))) {
-    push(`Use one of: ${allowed.join(' ')}`, 'error', 5000)
-    return
-  }
-  if (file.size > 15 * 1024 * 1024) {
-    push('Images must be 15 MB or smaller', 'error', 5000)
-    return
-  }
-  if (await run(() => projectsStore.setVisualBeatImage(id.value, position, beatIndex, file), `Beat ${beatIndex + 1} image saved`)) {
-    watchRender()
-  }
-}
-
-async function removeBeatImage(position: number, beatIndex: number) {
-  if (await run(() => projectsStore.removeVisualBeatImage(id.value, position, beatIndex), 'Beat image removed')) {
-    watchRender()
-  }
-}
-
-async function copyVisualIdea(visual: string) {
-  try {
-    await navigator.clipboard.writeText(visual)
-    push('Visual idea copied', 'success')
-  } catch {
-    push('Could not copy the visual idea', 'error')
-  }
-}
-
 // ---- writing stopped half way (error, server restart): carry on where it stopped ----
 async function continueWriting() {
   if (await run(() => projectsStore.resumeGeneration(id.value))) watchRender()
@@ -193,10 +155,6 @@ const videoStatus = computed(() => project.value?.finalVideoStatus ?? 'none')
 const pendingSections = computed(() => sections.value.filter((s) => s.videoStatus !== 'ready').length)
 const rendering = computed(() => sections.value.some((s) => s.videoStatus === 'processing'))
 const canBuild = computed(() => !busy.value && !writing.value && !rendering.value && sections.value.length > 0 && videoStatus.value !== 'processing')
-
-async function buildSections() {
-  if (await run(() => projectsStore.buildSectionVideos(id.value))) watchRender()
-}
 async function buildVideo() {
   if (await run(() => projectsStore.convertIntoVideo(id.value))) {
     tab.value = 'video'
@@ -211,6 +169,11 @@ async function removeVideo() {
 const voice = ref('')
 const wpm = ref(150)
 const similarity = ref(88)
+const renderMode = ref<'image' | 'cinematic'>('cinematic')
+const renderModeOptions: { value: 'image' | 'cinematic'; label: string }[] = [
+  { value: 'image', label: 'Image' },
+  { value: 'cinematic', label: 'Cinematic Skill' },
+]
 watch(
   () => project.value?.id,
   () => {
@@ -219,10 +182,15 @@ watch(
     voice.value = p.voiceModel
     wpm.value = p.wordsPerMinute
     similarity.value = Math.round(p.similarityThreshold * 100)
+    renderMode.value = p.renderMode
   },
   { immediate: true },
 )
-const mediaSettingsChanged = computed(() => !!project.value && (voice.value !== project.value.voiceModel || wpm.value !== project.value.wordsPerMinute))
+const mediaSettingsChanged = computed(() => !!project.value && (
+  voice.value !== project.value.voiceModel ||
+  wpm.value !== project.value.wordsPerMinute ||
+  renderMode.value !== project.value.renderMode
+))
 const settingsChanged = computed(() => !!project.value && (
   mediaSettingsChanged.value || similarity.value !== Math.round(project.value.similarityThreshold * 100)
 ))
@@ -230,9 +198,9 @@ const settingsChanged = computed(() => !!project.value && (
 async function saveSettings() {
   const needsRerender = mediaSettingsChanged.value
   const message = needsRerender
-    ? 'Narration settings saved. Rebuild cinematic scenes to apply them.'
+    ? 'Video settings saved. Press Generate video to rebuild the scenes.'
     : 'Similarity limit saved. It applies to future sections and AI rewrites.'
-  if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value, similarity.value / 100), message)) {
+  if (await run(() => projectsStore.updateSettings(id.value, voice.value, wpm.value, similarity.value / 100, renderMode.value), message)) {
     if (needsRerender) watchRender()
   }
 }
@@ -296,7 +264,7 @@ async function removeProject() {
 
       <section v-if="tab === 'sections'" class="project-section-page">
         <div class="project-content-heading">
-          <div><h2>Script & scenes</h2><p>Choose Single image or Cinematic Skill for each section, then render your film.</p></div>
+          <div><h2>Script & scenes</h2><p>{{ project.renderMode === 'cinematic' ? 'Cinematic Skill finds visuals and creates the film automatically.' : 'Upload one image for each section, then generate the film.' }}</p></div>
           <button v-if="!writing" class="secondary-action" @click="adding = true"><AppIcon name="plus" :size="15" /> Add section</button>
         </div>
 
@@ -322,7 +290,7 @@ async function removeProject() {
 
             <details v-if="s.renderMode === 'cinematic' && s.visualPlan.length" class="visual-beats">
               <summary>Visual direction · {{ s.visualPlan.length }} beats</summary>
-              <p class="cinematic-free-note">Cinematic Skill searches Wikimedia Commons for real, freely reusable photographs and archival images, then builds the camera moves, visual board, sound effects and captions automatically. Uploads are optional overrides.</p>
+              <p class="cinematic-free-note">Cinematic Skill automatically finds relevant, reusable photos for each narration beat and builds the complete film. Nothing needs to be uploaded.</p>
               <ol>
                 <li v-for="(beat, beatIndex) in s.visualPlan" :key="beatIndex">
                   <div class="visual-beat-heading">
@@ -331,7 +299,7 @@ async function removeProject() {
                   </div>
                   <p>{{ beat.visual }}</p>
                   <small v-if="beat.onScreenText">On-screen text: {{ beat.onScreenText }}</small>
-                  <img v-if="beat.imageUrl" :src="beat.imageUrl" :alt="`Visual for section ${s.position}, beat ${beatIndex + 1}`" class="visual-beat-image" loading="lazy" />
+                  <img v-if="beat.imageUrl && beat.imageOrigin === 'commons'" :src="beat.imageUrl" :alt="`Visual for section ${s.position}, beat ${beatIndex + 1}`" class="visual-beat-image" loading="lazy" />
                   <div v-if="beat.imageOrigin === 'commons' && beat.imageTitle" class="visual-beat-credit">
                     <small>ARCHIVE IMAGE</small>
                     <a v-if="beat.imageSourceUrl" :href="beat.imageSourceUrl" target="_blank" rel="noopener noreferrer">{{ beat.imageTitle }}</a>
@@ -342,16 +310,6 @@ async function removeProject() {
                       <a v-if="beat.imageLicenseUrl" :href="beat.imageLicenseUrl" target="_blank" rel="noopener noreferrer">{{ beat.imageLicense }}</a>
                       <strong v-else>{{ beat.imageLicense }}</strong>
                     </span>
-                  </div>
-                  <small v-else-if="beat.imageOrigin === 'user'" class="visual-beat-user-credit">Your uploaded image</small>
-
-                  <div class="visual-beat-actions">
-                    <label class="visual-beat-upload">
-                      <AppIcon name="upload" :size="13" />
-                      {{ beat.imageUrl ? 'Replace image' : 'Upload image' }}
-                      <input type="file" accept=".jpg,.jpeg,.png,.webp,.bmp" :disabled="writing || busy" @change="uploadBeatImage(s.position, beatIndex, $event)" />
-                    </label>
-                    <button v-if="beat.imageUrl" type="button" class="visual-beat-remove" @click="removeBeatImage(s.position, beatIndex)">Remove</button>
                   </div>
                 </li>
               </ol>
@@ -374,7 +332,7 @@ async function removeProject() {
               <small>The evidence check is an AI-assisted assessment, not a statistical guarantee of factual accuracy.</small>
             </details>
             <p v-if="s.videoStatus === 'failed' && s.videoError" class="section-error">{{ s.videoError }}</p>
-            <SectionImage :project-id="id" :section="s" @changed="watchRender" />
+            <SectionImage v-if="project.renderMode === 'image'" :project-id="id" :section="s" @changed="watchRender" />
 
             <video
               v-if="s.videoUrl && s.videoStatus === 'ready'"
@@ -389,20 +347,12 @@ async function removeProject() {
               <a v-if="s.subtitleUrl" :href="s.subtitleUrl" target="_blank" rel="noopener noreferrer" download>Download subtitles (.srt)</a>
             </div>
 
-            <div v-if="s.videoStatus === 'ready' && (s.creditsUrl || s.subtitleUrl)" class="section-media-downloads">
-              <a v-if="s.creditsUrl" :href="s.creditsUrl" target="_blank" rel="noopener noreferrer" download>Image credits and licences</a>
-              <a v-if="s.subtitleUrl" :href="s.subtitleUrl" target="_blank" rel="noopener noreferrer" download>Download subtitles (.srt)</a>
-            </div>
-
             <p v-else-if="s.videoStatus === 'processing'" class="section-video-note"><AppIcon name="loader" :size="14" class="animate-spin" /> {{ s.renderMode === 'cinematic' ? 'Rendering with Cinematic Skill…' : 'Building the single-image scene…' }}</p>
             <p v-else-if="s.videoStatus === 'pending'" class="section-video-note">{{ s.renderMode === 'cinematic' ? 'This Cinematic Skill scene has not been rendered yet.' : 'This single-image scene has not been rendered yet.' }}</p>
 
             <div class="section-actions">
               <button @click="startEdit(s.position)"><AppIcon name="pencil" :size="14" /> Edit script</button>
               <button @click="changeTarget = s.position"><AppIcon name="wand" :size="14" /> Ask AI to revise</button>
-              <button :disabled="busy || writing || s.videoStatus === 'processing'" @click="rerender(s.position)">
-                <AppIcon name="film" :size="14" /> {{ s.renderMode === 'image' ? (s.videoStatus === 'ready' ? 'Rebuild image scene' : s.videoStatus === 'failed' ? 'Retry image scene' : 'Render image scene') : (s.videoStatus === 'ready' ? 'Rebuild cinematic scene' : s.videoStatus === 'failed' ? 'Retry cinematic scene' : 'Render cinematic scene') }}
-              </button>
               <button class="section-delete-action" @click="sectionToDelete = s.position"><AppIcon name="trash" :size="14" /> Delete</button>
             </div>
           </li>
@@ -416,13 +366,15 @@ async function removeProject() {
         <div v-if="sections.length" class="build-panel">
           <div class="build-panel-copy">
             <span class="build-panel-icon"><AppIcon name="film" :size="18" /></span>
-            <div><strong>Build your film</strong><p>{{ sections.length - pendingSections }} of {{ sections.length }} section scenes are ready. Cinematic Skill rendering is local and uses no paid video-generation API.</p></div>
+            <div><strong>Generate your video</strong>
+              <p>{{ project.renderMode === 'cinematic' ? 'Automatically finds images, renders every section and joins everything into one film.' : 'Uses each section’s image, renders every scene and joins everything into one film.' }}</p>
+            </div>
           </div>
           <div class="build-panel-actions">
-            <button :disabled="!canBuild || rendering || pendingSections === 0" class="secondary-action" @click="buildSections">
-              <AppIcon :name="rendering ? 'loader' : 'film'" :size="15" :class="{ 'animate-spin': rendering }" /> Render pending scenes
+            <button :disabled="!canBuild" class="primary-action" @click="buildVideo">
+              <AppIcon :name="videoStatus === 'processing' ? 'loader' : 'sparkles'" :size="15" :class="{ 'animate-spin': videoStatus === 'processing' }" />
+              {{ videoStatus === 'ready' ? 'Regenerate video' : 'Generate video' }}
             </button>
-            <button :disabled="!canBuild" class="primary-action" @click="buildVideo"><AppIcon name="sparkles" :size="15" /> Assemble final film</button>
           </div>
         </div>
       </section>
@@ -445,13 +397,13 @@ async function removeProject() {
           <p class="eyebrow">FINAL VIDEO</p>
           <h2>{{ { none: 'Your video is not built yet', processing: 'Putting it all together', outdated: 'Your video needs an update', failed: 'The final video could not be built', ready: 'The video link is unavailable' }[videoStatus] }}</h2>
           <p>
-            <template v-if="videoStatus === 'none'">Render the cinematic scenes, then combine them with narration into one finished film.</template>
-            <template v-else-if="videoStatus === 'processing'">The scenes are being assembled. You can leave this page while it finishes.</template>
+            <template v-if="videoStatus === 'none'">Press Generate video. The app will render every section and join them automatically.</template>
+            <template v-else-if="videoStatus === 'processing'">Your sections are being rendered and joined into one film.</template>
             <template v-else-if="videoStatus === 'outdated'">The script or settings changed. {{ pendingSections }} cinematic scene(s) will be rebuilt.</template>
             <template v-else>{{ project.finalVideoError ?? 'The video assembly step failed.' }}</template>
           </p>
           <button v-if="videoStatus !== 'processing'" :disabled="busy" class="primary-action mt-5" @click="buildVideo">
-            <AppIcon name="refresh" :size="15" /> {{ videoStatus === 'none' ? 'Assemble final film' : videoStatus === 'outdated' ? 'Rebuild final film' : 'Try again' }}
+            <AppIcon name="refresh" :size="15" /> {{ videoStatus === 'none' ? 'Generate video' : videoStatus === 'outdated' ? 'Regenerate video' : 'Try again' }}
           </button>
         </div>
         <YoutubeUploadPanel v-if="videoStatus === 'ready'" :project-id="id" />
@@ -459,8 +411,13 @@ async function removeProject() {
 
       <section v-else class="project-settings-page">
         <div class="settings-card">
-          <div class="project-content-heading"><div><h2>Narration settings</h2><p>Voice and speed changes affect rendering. Similarity changes affect future generation and AI rewrites.</p></div></div>
+          <div class="project-content-heading"><div><h2>Video settings</h2><p>Choose one visual mode for the entire project and set the narrator.</p></div></div>
           <div class="settings-fields">
+            <div>
+              <span class="field-label">Visual mode</span>
+              <SegmentedControl v-model="renderMode" :options="renderModeOptions" aria-label="Visual mode" />
+              <p class="field-hint">{{ renderMode === 'cinematic' ? 'Cinematic Skill automatically finds relevant images. No uploads required.' : 'Upload one still image for each section.' }}</p>
+            </div>
             <div><label for="voice" class="field-label">Narrator voice</label>
               <select id="voice" v-model="voice">
                 <option v-for="v in voices" :key="v.id" :value="v.id">{{ v.label }} — {{ v.accent }}</option>

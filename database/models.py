@@ -46,6 +46,9 @@ class State(Base):
     user_prompted_sectional_changes: Mapped[dict | None] = mapped_column(JSONB)
     sections_completed: Mapped[int | None] = mapped_column(Integer)
     video_type: Mapped[str | None] = mapped_column(Text)
+    render_mode: Mapped[str] = mapped_column(
+        Text, default="cinematic", server_default="cinematic"
+    )
 
     router_prompt: Mapped[str | None] = mapped_column(Text)
     generator_response: Mapped[str | None] = mapped_column(Text)

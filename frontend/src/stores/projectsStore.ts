@@ -79,8 +79,8 @@ export const projectsStore = {
     delete state.sections[id]
   },
 
-  async updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number) {
-    upsert(await service.updateSettings(id, voiceModel, wordsPerMinute, similarityThreshold))
+  async updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number, renderMode: Parameters<typeof service.updateSettings>[4]) {
+    upsert(await service.updateSettings(id, voiceModel, wordsPerMinute, similarityThreshold, renderMode))
     await this.loadSections(id)
   },
 

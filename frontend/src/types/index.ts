@@ -62,6 +62,7 @@ export interface Project {
   voiceModel: string
   wordsPerMinute: number
   similarityThreshold: number
+  renderMode: SectionRenderMode
   researchStatus: 'pending' | 'ready' | 'unavailable'
   researchError: string | null
   estimatedDurationInMinutes: number
@@ -84,5 +85,6 @@ export interface NewProjectForm {
   wordsPerMinute: number
   totalSections: number | null
   voiceModel: string
+  renderMode: SectionRenderMode
   similarityThreshold: number | null // null = automatic facts/story recommendation
 }

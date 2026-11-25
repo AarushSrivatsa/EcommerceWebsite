@@ -50,6 +50,14 @@ async def initialize_database() -> None:
         await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await connection.run_sync(Base.metadata.create_all)
         await connection.run_sync(_sync_model_columns)
+        # Rendering mode is project-wide; migrate existing section rows to that choice.
+        await connection.execute(text(
+            "UPDATE sections AS section "
+            "SET render_mode = state.render_mode "
+            "FROM states AS state "
+            "WHERE section.state_id = state.id "
+            "AND section.render_mode IS DISTINCT FROM state.render_mode"
+        ))
 
         # Keep stored embeddings compatible with the current model dimension.
         dimension = await connection.scalar(

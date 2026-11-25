@@ -19,6 +19,7 @@ const form = reactive<NewProjectForm>({
   wordsPerMinute: 150,
   totalSections: null,
   voiceModel: 'Zoey',
+  renderMode: 'cinematic',
   similarityThreshold: null,
 })
 const autoSections = ref(true)
@@ -36,6 +37,10 @@ const typeHint: Record<VideoType, string> = {
   facts: 'A narrated list of interesting, self-contained facts.',
   story: 'A narrative with a beginning, a middle and an end.',
 }
+const renderModeOptions: { value: 'image' | 'cinematic'; label: string }[] = [
+  { value: 'image', label: 'Image' },
+  { value: 'cinematic', label: 'Cinematic Skill' },
+]
 
 const estimatedWords = computed(() => Math.round(form.estimatedDurationInMinutes * form.wordsPerMinute))
 const recommendedSimilarity = computed(() => form.videoType === 'story' ? 92 : 88)
@@ -113,6 +118,13 @@ async function submit() {
             <span class="field-label">Video style</span>
             <SegmentedControl v-model="form.videoType" :options="typeOptions" aria-label="Video type" />
             <p class="field-hint">{{ typeHint[form.videoType] }}</p>
+          </div>
+          <div class="field-group">
+            <span class="field-label">Visual mode</span>
+            <SegmentedControl v-model="form.renderMode" :options="renderModeOptions" aria-label="Visual mode" />
+            <p class="field-hint">{{ form.renderMode === 'cinematic'
+              ? 'Automatically finds relevant, reusable photos for every narration beat. No image uploads needed.'
+              : 'Use one still image per section. You will upload those images after the script is ready.' }}</p>
           </div>
 
           <div class="range-grid">
@@ -215,6 +227,7 @@ async function submit() {
           <p class="summary-caption">Your project at a glance</p>
           <div class="summary-details">
             <div><span>Format</span><strong>{{ form.videoType === 'auto' ? 'Smart format' : form.videoType === 'facts' ? 'Facts' : 'Story' }}</strong></div>
+            <div><span>Visual mode</span><strong>{{ form.renderMode === 'cinematic' ? 'Cinematic Skill' : 'Image' }}</strong></div>
             <div><span>Length</span><strong>{{ form.estimatedDurationInMinutes }} minutes</strong></div>
             <div><span>Words</span><strong>{{ estimatedWords.toLocaleString() }} approx.</strong></div>
             <div><span>Sections</span><strong>{{ autoSections ? 'Automatic' : sectionCount }}</strong></div>

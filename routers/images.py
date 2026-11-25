@@ -28,6 +28,8 @@ async def set_section_image(
 ):
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
+    if state.render_mode != "image":
+        raise HTTPException(409, "Cinematic Skill finds its own visuals. No image upload is needed.")
     section = await deps.section_or_404(script_id, position)
     if section.video_status == "processing":
         raise HTTPException(409, "wait for the current scene render to finish before changing images")
@@ -141,6 +143,8 @@ async def set_visual_beat_image(
     """Attach one image to one narration paragraph/visual beat (zero-based index)."""
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
+    if state.render_mode != "image":
+        raise HTTPException(409, "Cinematic Skill finds its own visuals. Manual image uploads are disabled.")
     section = await deps.section_or_404(script_id, position)
     if section.video_status == "processing":
         raise HTTPException(409, "wait for the current scene render to finish before changing images")

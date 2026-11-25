@@ -28,6 +28,7 @@ class ScriptOut(BaseModel):
     id: uuid.UUID
     user_prompt: str
     video_type: str | None
+    render_mode: str
     voice_model: str | None
     words_per_minute: int
     similarity_threshold: float
@@ -48,6 +49,7 @@ async def script_out(state: State) -> ScriptOut:
         id=state.id,
         user_prompt=state.user_prompt,
         video_type=state.video_type,
+        render_mode=state.render_mode or "cinematic",
         voice_model=state.voice_model,
         words_per_minute=state.words_per_minute,
         similarity_threshold=similarity_limit(deps.state_from_row(state)),
@@ -82,6 +84,7 @@ class ScriptCreate(BaseModel):
     total_sections: int | None = Field(default=None, ge=1, le=200)
     voice_model: str = "Zoey"
     video_type: Literal["facts", "story"] | None = None
+    render_mode: Literal["image", "cinematic"] = "cinematic"
     similarity_threshold: float | None = Field(default=None, ge=0.5, le=1)
 
 
@@ -98,7 +101,7 @@ async def create_script(body: ScriptCreate):
         sections_completed=0,
     )
     async with SessionLocal() as session:
-        session.add(State(**base.model_dump()))
+        session.add(State(**base.model_dump(), render_mode=body.render_mode))
         await session.flush()
         await session.execute(
             update(State)
@@ -130,6 +133,7 @@ async def get_script(script_id: uuid.UUID):
 class ScriptUpdate(BaseModel):
     voice_model: str | None = None
     words_per_minute: int | None = Field(default=None, ge=60, le=300)
+    render_mode: Literal["image", "cinematic"] | None = None
     similarity_threshold: float | None = Field(default=None, ge=0.5, le=1)
 
 
@@ -144,7 +148,7 @@ async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
         for key, value in body.model_dump(exclude_unset=True).items()
         if getattr(state, key) != value
     }
-    render_changes = {"voice_model", "words_per_minute"} & changes.keys()
+    render_changes = {"voice_model", "words_per_minute", "render_mode"} & changes.keys()
 
     if changes:
         async with SessionLocal() as session:
@@ -153,14 +157,17 @@ async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
             )
             # A similarity threshold affects future writing only; it does not invalidate rendered media.
             if render_changes:
+                section_changes = {
+                    "content_rev": Section.content_rev + 1,
+                    "video_status": "pending",
+                    "video_error": None,
+                }
+                if "render_mode" in render_changes:
+                    section_changes["render_mode"] = changes["render_mode"]
                 await session.execute(
                     update(Section)
                     .where(Section.state_id == script_id)
-                    .values(
-                        content_rev=Section.content_rev + 1,
-                        video_status="pending",
-                        video_error=None,
-                    )
+                    .values(**section_changes)
                 )
                 await session.execute(
                     update(State)

@@ -13,6 +13,7 @@ interface ScriptDto {
   id: string
   user_prompt: string
   video_type: 'facts' | 'story' | null
+  render_mode: SectionRenderMode
   voice_model: string | null
   words_per_minute: number
   similarity_threshold: number
@@ -82,6 +83,7 @@ function toProject(s: ScriptDto): Project {
     id: s.id,
     userPrompt: s.user_prompt,
     videoType: s.video_type ?? 'auto',
+    renderMode: s.render_mode ?? 'cinematic',
     voiceModel: toVoiceModel(s.voice_model),
     wordsPerMinute: s.words_per_minute,
     similarityThreshold: s.similarity_threshold,
@@ -153,6 +155,7 @@ export async function createProject(form: NewProjectForm): Promise<Project> {
     total_sections: form.totalSections,
     voice_model: form.voiceModel,
     video_type: form.videoType === 'auto' ? null : form.videoType,
+    render_mode: form.renderMode,
     similarity_threshold: form.similarityThreshold,
   })
   return toProject(dto)
@@ -162,11 +165,12 @@ export async function resumeGeneration(id: string): Promise<Project> {
   return toProject(await api.post<ScriptDto>(`/scripts/${id}/generate`))
 }
 
-export async function updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number): Promise<Project> {
+export async function updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number, renderMode: SectionRenderMode): Promise<Project> {
   return toProject(await api.patch<ScriptDto>(`/scripts/${id}`, {
     voice_model: voiceModel,
     words_per_minute: wordsPerMinute,
     similarity_threshold: similarityThreshold,
+    render_mode: renderMode,
   }))
 }
 
