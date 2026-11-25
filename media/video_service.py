@@ -124,10 +124,7 @@ async def render_section_video(section_id: uuid.UUID) -> None:
             single_image = None
             beat_images: list[Path | None] = []
             if render_mode == "image":
-                image_path = section.image_path or next(
-                    (beat.get("image_path") for beat in visual_plan if beat.get("image_path")),
-                    None,
-                )
+                image_path = section.image_path
                 if not image_path:
                     raise RuntimeError(
                         "Single image mode needs one scene image. Upload a scene image "
