@@ -351,10 +351,12 @@ def _build_video(
     lines = []
     media_duration = max(0.1, sum(durations))
     fade = max(0.0, min(float(fade_duration), media_duration / 3))
-    total_duration = media_duration + (2 * fade)
+    lead_silence = min(0.12, fade / 4) if fade > 0 else 0.0
+    tail_silence = min(0.30, fade / 2) if fade > 0 else 0.0
+    total_duration = media_duration + lead_silence + tail_silence
     scene_durations = list(durations)
     if fade > 0 and len(scene_durations) == 1:
-        scene_durations[0] += 2 * fade
+        scene_durations[0] += lead_silence + tail_silence
     for image, duration in zip(images, scene_durations):
         lines.append(_concat_line_path(image))
         lines.append(f"duration {duration:.4f}")
@@ -370,16 +372,17 @@ def _build_video(
     )
     audio_filter = None
     if fade > 0:
-        fade_out_start = fade + media_duration
+        fade_out_start = total_duration - fade
         video_filter += (
             f",fade=t=in:st=0:d={fade:.4f}"
             f",fade=t=out:st={fade_out_start:.4f}:d={fade:.4f}"
         )
-        lead_ms = int(round(fade * 1000))
+        lead_ms = int(round(lead_silence * 1000))
+        audio_fade_in = max(0.01, fade - lead_silence)
         audio_filter = (
             f"adelay={lead_ms}:all=1,"
-            f"apad=pad_dur={fade:.4f},"
-            f"afade=t=in:st=0:d={fade:.4f},"
+            f"apad=pad_dur={tail_silence:.4f},"
+            f"afade=t=in:st={lead_silence:.4f}:d={audio_fade_in:.4f},"
             f"afade=t=out:st={fade_out_start:.4f}:d={fade:.4f}"
         )
 

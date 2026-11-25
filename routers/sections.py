@@ -1,7 +1,10 @@
 """Section listing, editing, rendering and deletion routes."""
 import asyncio
+import mimetypes
+import tempfile
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -10,6 +13,7 @@ from sqlalchemy import func, select, update
 import deps
 import database.storage as storage
 import media.video_service as video_service
+from media.cinematic_assets import search_and_download
 from config import IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 from database.initialization import SessionLocal
 from database.models import Section, State
@@ -119,6 +123,34 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
     embedding, image_prompt = await asyncio.gather(
         embed(text), suggest_image_prompt(text)
     )
+    title = (body.title.strip() if body.title and body.title.strip() else " ".join(text.split()[:9])[:100])
+    image_path = None
+    image_metadata = {"origin": "none", "query": image_prompt}
+    with tempfile.TemporaryDirectory(prefix="added-section-image-") as temp_dir:
+        asset = await asyncio.to_thread(
+            search_and_download,
+            image_prompt or title,
+            Path(temp_dir),
+            f"added-section-{uuid.uuid4().hex[:8]}",
+        )
+        if asset:
+            local = Path(asset["path"])
+            image_path = f"{script_id}/added-{uuid.uuid4().hex[:10]}{local.suffix}"
+            await storage.upload_file(
+                IMAGES_BUCKET,
+                image_path,
+                local,
+                mimetypes.guess_type(local.name)[0] or "image/jpeg",
+            )
+            image_metadata = {
+                "origin": "commons",
+                "title": asset.get("title"),
+                "credit": asset.get("credit"),
+                "license": asset.get("license"),
+                "license_url": asset.get("license_url"),
+                "source_url": asset.get("source_url"),
+                "query": asset.get("query") or image_prompt,
+            }
 
     async with SessionLocal() as session:
         count = await session.scalar(
@@ -148,10 +180,12 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
             state_id=script_id,
             position=position,
             text=text,
-            title=(body.title.strip() if body.title and body.title.strip() else ' '.join(text.split()[:9])[:100]),
+            title=title,
             word_count=len(text.split()),
             embedding=embedding,
             image_prompt=image_prompt,
+            image_path=image_path,
+            image_metadata=image_metadata,
             render_mode="image",
             similarity_score=None if nearest is None else max(0.0, min(1.0, float(1 - nearest))),
             similarity_threshold=similarity_limit(deps.state_from_row(state)),
