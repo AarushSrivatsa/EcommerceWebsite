@@ -22,3 +22,15 @@ The app creates a structured beat plan and a repeatable scene using the upstream
 ## Runtime
 
 The upstream renderer exports 1280×720 at 30 fps. It runs with one render worker to reduce memory use on small hosting instances. This does not guarantee that long renders will fit within a 512 MB instance; validate peak memory and execution limits on the deployed service.
+
+## Hosting notes
+
+- The renderer runs with one worker to reduce peak memory. The 1280×720, 30 fps output is retained.
+- ONNX, BLAS and FFmpeg thread counts are bounded; large storage assets stream to disk rather than being buffered in API memory.
+- A 512 MB instance is not guaranteed to handle long renders. Check peak memory and execution limits on the deployed service.
+
+## API exposure
+
+The API allows the local Vite development origin by default. The production frontend is served by the same FastAPI origin. When hosting the frontend separately, set `CORS_ORIGINS` to exact trusted origins.
+
+CORS is not authentication. Before exposing this API to multiple users or the public internet, add Supabase Auth JWT verification and per-user ownership checks for projects, sections and YouTube channel operations. The current data model does not associate projects with authenticated users.

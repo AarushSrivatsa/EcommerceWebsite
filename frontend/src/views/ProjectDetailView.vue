@@ -399,10 +399,10 @@ async function removeProject() {
           <p>
             <template v-if="videoStatus === 'none'">Press Generate video. The app will render every section and join them automatically.</template>
             <template v-else-if="videoStatus === 'processing'">Your sections are being rendered and joined into one film.</template>
-            <template v-else-if="videoStatus === 'outdated'">The script or settings changed. {{ pendingSections }} cinematic scene(s) will be rebuilt.</template>
+            <template v-else-if="videoStatus === 'outdated'">The script or settings changed. {{ pendingSections }} scene(s) will be rebuilt.</template>
             <template v-else>{{ project.finalVideoError ?? 'The video assembly step failed.' }}</template>
           </p>
-          <button v-if="videoStatus !== 'processing'" :disabled="busy" class="primary-action mt-5" @click="buildVideo">
+          <button v-if="videoStatus !== 'processing'" :disabled="!canBuild" class="primary-action mt-5" @click="buildVideo">
             <AppIcon name="refresh" :size="15" /> {{ videoStatus === 'none' ? 'Generate video' : videoStatus === 'outdated' ? 'Regenerate video' : 'Try again' }}
           </button>
         </div>
