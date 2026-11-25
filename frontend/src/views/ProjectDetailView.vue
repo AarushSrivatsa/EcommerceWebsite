@@ -370,6 +370,7 @@ async function removeProject() {
             <span class="build-panel-icon"><AppIcon name="film" :size="18" /></span>
             <div><strong>Generate your video</strong>
               <p>Renders unfinished section previews and joins them into one video. Every section fades in and out with its narration.</p>
+              <p v-if="sections.some((section) => !section.imageUrl)" class="field-hint">Find or upload an image for every section before generating the video.</p>
             </div>
           </div>
           <div class="build-panel-actions">

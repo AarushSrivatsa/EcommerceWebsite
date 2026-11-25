@@ -94,6 +94,5 @@ export interface NewProjectForm {
   wordsPerMinute: number
   totalSections: number | null
   voiceModel: string
-  renderMode: SectionRenderMode
   similarityThreshold: number | null // null = automatic facts/story recommendation
 }

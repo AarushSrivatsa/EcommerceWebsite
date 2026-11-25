@@ -28,7 +28,6 @@ class ScriptOut(BaseModel):
     id: uuid.UUID
     user_prompt: str
     video_type: str | None
-    render_mode: str
     voice_model: str | None
     words_per_minute: int
     similarity_threshold: float
@@ -49,7 +48,6 @@ async def script_out(state: State) -> ScriptOut:
         id=state.id,
         user_prompt=state.user_prompt,
         video_type=state.video_type,
-        render_mode=state.render_mode or "image",
         voice_model=state.voice_model,
         words_per_minute=state.words_per_minute,
         similarity_threshold=similarity_limit(deps.state_from_row(state)),
@@ -146,7 +144,7 @@ async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
         for key, value in body.model_dump(exclude_unset=True).items()
         if getattr(state, key) != value
     }
-    render_changes = {"voice_model", "words_per_minute", "render_mode"} & changes.keys()
+    render_changes = {"voice_model", "words_per_minute"} & changes.keys()
 
     if changes:
         async with SessionLocal() as session:
@@ -160,8 +158,6 @@ async def update_script(script_id: uuid.UUID, body: ScriptUpdate):
                     "video_status": "pending",
                     "video_error": None,
                 }
-                if "render_mode" in render_changes:
-                    section_changes["render_mode"] = changes["render_mode"]
                 await session.execute(
                     update(Section)
                     .where(Section.state_id == script_id)

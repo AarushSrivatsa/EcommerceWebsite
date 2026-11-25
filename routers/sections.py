@@ -30,7 +30,6 @@ class SectionOut(BaseModel):
     credits_url: str | None
     subtitle_url: str | None
     video_status: str
-    render_mode: str
     video_error: str | None
     updated_at: datetime | None
     sources: list[dict] = Field(default_factory=list)
@@ -74,7 +73,6 @@ async def section_out(section: Section) -> SectionOut:
         credits_url=credits_url,
         subtitle_url=subtitle_url,
         video_status=section.video_status,
-        render_mode=getattr(section, "render_mode", "cinematic") or "cinematic",
         video_error=section.video_error,
         updated_at=section.updated_at,
         sources=section.sources or [],
@@ -154,7 +152,7 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
             word_count=len(text.split()),
             embedding=embedding,
             image_prompt=image_prompt,
-            render_mode=state.render_mode or "cinematic",
+            render_mode="image",
             similarity_score=None if nearest is None else max(0.0, min(1.0, float(1 - nearest))),
             similarity_threshold=similarity_limit(deps.state_from_row(state)),
             sources=[],
