@@ -49,7 +49,7 @@ async def script_out(state: State) -> ScriptOut:
         id=state.id,
         user_prompt=state.user_prompt,
         video_type=state.video_type,
-        render_mode=state.render_mode or "cinematic",
+        render_mode=state.render_mode or "image",
         voice_model=state.voice_model,
         words_per_minute=state.words_per_minute,
         similarity_threshold=similarity_limit(deps.state_from_row(state)),

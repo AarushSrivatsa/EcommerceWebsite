@@ -34,14 +34,21 @@ interface SectionDto {
   title: string | null
   word_count: number
   image_prompt: string | null
-  image_metadata: ImageMetadata | null
+  image_metadata: {
+    origin: 'commons' | 'user' | 'none'
+    title?: string | null
+    credit?: string | null
+    license?: string | null
+    license_url?: string | null
+    source_url?: string | null
+    query?: string | null
+  } | null
   image_url: string | null
   audio_url: string | null
   video_url: string | null
   credits_url: string | null
   subtitle_url: string | null
   video_status: SectionVideoStatus
-  render_mode: SectionRenderMode
   video_error: string | null
   updated_at: string | null
   sources: { title: string; url: string; domain: string | null; excerpt: string; similarity: number }[]
@@ -109,13 +116,20 @@ function toSection(s: SectionDto): Section {
     title: s.title ?? null,
     wordCount: s.word_count,
     imagePrompt: s.image_prompt,
-    imageMetadata: s.image_metadata ?? null,
+    imageMetadata: s.image_metadata ? {
+      origin: s.image_metadata.origin,
+      title: s.image_metadata.title ?? null,
+      credit: s.image_metadata.credit ?? null,
+      license: s.image_metadata.license ?? null,
+      licenseUrl: s.image_metadata.license_url ?? null,
+      sourceUrl: s.image_metadata.source_url ?? null,
+      query: s.image_metadata.query ?? null,
+    } : null,
     imageUrl: s.image_url,
     videoUrl: s.video_url,
     creditsUrl: s.credits_url ?? null,
     subtitleUrl: s.subtitle_url ?? null,
     videoStatus: s.video_status,
-    renderMode: s.render_mode ?? 'cinematic',
     videoError: s.video_error,
     sources: s.sources ?? [],
     visualPlan: (s.visual_plan ?? []).map((beat) => ({

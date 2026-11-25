@@ -72,7 +72,6 @@ export interface Project {
   voiceModel: string
   wordsPerMinute: number
   similarityThreshold: number
-  renderMode: SectionRenderMode
   researchStatus: 'pending' | 'ready' | 'unavailable'
   researchError: string | null
   estimatedDurationInMinutes: number

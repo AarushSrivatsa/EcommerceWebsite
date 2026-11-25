@@ -2,7 +2,6 @@
 import asyncio
 import uuid
 from datetime import datetime
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -21,8 +20,10 @@ router = APIRouter(prefix="/scripts/{script_id}/sections", tags=["sections"])
 class SectionOut(BaseModel):
     position: int
     text: str
+    title: str | None
     word_count: int
     image_prompt: str | None
+    image_metadata: dict | None
     image_url: str | None
     audio_url: str | None
     video_url: str | None
@@ -63,8 +64,10 @@ async def section_out(section: Section) -> SectionOut:
     return SectionOut(
         position=section.position,
         text=section.text,
+        title=section.title,
         word_count=section.word_count,
         image_prompt=section.image_prompt,
+        image_metadata=section.image_metadata,
         image_url=image_url,
         audio_url=audio_url,
         video_url=video_url,
@@ -104,6 +107,7 @@ async def get_section(script_id: uuid.UUID, position: int):
 
 class SectionCreate(BaseModel):
     text: str = Field(min_length=1)
+    title: str | None = Field(default=None, max_length=100)
     position: int | None = Field(default=None, ge=1)
 
 
@@ -146,6 +150,7 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
             state_id=script_id,
             position=position,
             text=text,
+            title=(body.title.strip() if body.title and body.title.strip() else ' '.join(text.split()[:9])[:100]),
             word_count=len(text.split()),
             embedding=embedding,
             image_prompt=image_prompt,
@@ -177,7 +182,8 @@ async def add_section(script_id: uuid.UUID, body: SectionCreate):
 
 
 class SectionUpdate(BaseModel):
-    text: str = Field(min_length=1)
+    text: str | None = Field(default=None, min_length=1)
+    title: str | None = Field(default=None, max_length=100)
 
 
 @router.patch("/{position}", response_model=SectionOut)
@@ -186,37 +192,50 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
 
     state = await deps.script_or_404(script_id)
     deps.require_idle(state)
-    existing_section = await deps.section_or_404(script_id, position)
-    if existing_section.video_status == "processing":
-        raise HTTPException(409, "wait for the current scene render to finish before editing this section")
-    old_beat_paths = [beat.get("image_path") for beat in (existing_section.visual_plan or []) if beat.get("image_path")]
-    text = body.text.strip()
-    embedding, image_prompt = await asyncio.gather(
-        embed(text), suggest_image_prompt(text)
-    )
+    existing = await deps.section_or_404(script_id, position)
+    if existing.video_status == "processing":
+        raise HTTPException(409, "wait for the current section preview to finish before editing")
+    if body.text is None and body.title is None:
+        raise HTTPException(422, "provide a title or narration change")
+
+    text = (body.text if body.text is not None else existing.text).strip()
+    title = (body.title if body.title is not None else (existing.title or "")).strip()
+    if not title:
+        raise HTTPException(422, "section title cannot be empty")
+    text_changed = text != existing.text
+    if text_changed:
+        embedding, image_prompt = await asyncio.gather(embed(text), suggest_image_prompt(text))
+    else:
+        embedding, image_prompt = existing.embedding, existing.image_prompt
 
     async with SessionLocal() as session:
-        distance = Section.embedding.cosine_distance(embedding)
-        nearest = await session.scalar(
-            select(func.min(distance)).where(
-                Section.state_id == script_id,
-                Section.position != position,
+        if text_changed:
+            distance = Section.embedding.cosine_distance(embedding)
+            nearest = await session.scalar(
+                select(func.min(distance)).where(
+                    Section.state_id == script_id,
+                    Section.position != position,
+                )
             )
-        )
+            similarity_score = None if nearest is None else max(0.0, min(1.0, float(1 - nearest)))
+        else:
+            similarity_score = existing.similarity_score
+
         await session.execute(
             update(Section)
             .where(Section.state_id == script_id, Section.position == position)
             .values(
                 text=text,
+                title=title,
                 word_count=len(text.split()),
                 embedding=embedding,
                 image_prompt=image_prompt,
-                sources=[],
-                visual_plan=[],
-                similarity_score=None if nearest is None else float(1 - nearest),
+                sources=existing.sources if not text_changed else [],
+                visual_plan=[] if text_changed else (existing.visual_plan or []),
+                similarity_score=similarity_score,
                 similarity_threshold=similarity_limit(deps.state_from_row(state)),
-                grounding_score=None,
-                grounding_feedback=None,
+                grounding_score=existing.grounding_score if not text_changed else None,
+                grounding_feedback=existing.grounding_feedback if not text_changed else None,
                 content_rev=Section.content_rev + 1,
                 video_status="pending",
                 video_error=None,
@@ -239,7 +258,6 @@ async def edit_section(script_id: uuid.UUID, position: int, body: SectionUpdate)
 
     if section is None:
         raise HTTPException(404, f"section {position} not found")
-    await storage.delete_quiet(IMAGES_BUCKET, old_beat_paths)
     return await section_out(section)
 
 

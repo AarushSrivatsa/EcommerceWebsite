@@ -50,13 +50,30 @@ async def initialize_database() -> None:
         await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await connection.run_sync(Base.metadata.create_all)
         await connection.run_sync(_sync_model_columns)
-        # Rendering mode is project-wide; migrate existing section rows to that choice.
+        # The app now has one still-image path per section.
+        await connection.execute(text(
+            "UPDATE states SET render_mode = 'image' "
+            "WHERE render_mode IS DISTINCT FROM 'image'"
+        ))
         await connection.execute(text(
             "UPDATE sections AS section "
-            "SET render_mode = state.render_mode "
-            "FROM states AS state "
-            "WHERE section.state_id = state.id "
-            "AND section.render_mode IS DISTINCT FROM state.render_mode"
+            "SET render_mode = 'image', "
+            "title = COALESCE(section.title, "
+            "NULLIF(section.visual_plan->0->>'section_title', ''), "
+            "NULLIF(section.visual_plan->0->>'on_screen_text', '')), "
+            "image_path = COALESCE(section.image_path, NULLIF(section.visual_plan->0->>'image_path', '')), "
+            "image_metadata = COALESCE(section.image_metadata, CASE "
+            "WHEN jsonb_array_length(CASE WHEN jsonb_typeof(section.visual_plan) = 'array' "
+            "THEN section.visual_plan ELSE '[]'::jsonb END) > 0 "
+            "THEN jsonb_build_object("
+            "'origin', COALESCE(section.visual_plan->0->>'image_origin', 'commons'), "
+            "'title', section.visual_plan->0->>'image_title', "
+            "'credit', section.visual_plan->0->>'image_credit', "
+            "'license', section.visual_plan->0->>'image_license', "
+            "'license_url', section.visual_plan->0->>'image_license_url', "
+            "'source_url', section.visual_plan->0->>'image_source_url') "
+            "ELSE NULL END) "
+            "WHERE section.state_id IN (SELECT id FROM states)"
         ))
 
         # Keep stored embeddings compatible with the current model dimension.
