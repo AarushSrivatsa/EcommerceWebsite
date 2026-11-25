@@ -563,9 +563,15 @@ async def push_section_node(state: BaseState) -> dict:
             )
         ).scalar_one_or_none()
 
-    # Preserve an image the user has already selected when rewriting a section.
-    image_path = previous.image_path if previous else None
-    image_metadata = previous.image_metadata if previous else None
+    # Preserve custom user uploads when rewriting; re-source Commons images for the new text.
+    keep_custom_image = bool(
+        previous
+        and previous.image_path
+        and (previous.image_metadata or {}).get("origin") == "user"
+    )
+    previous_image_path = previous.image_path if previous else None
+    image_path = previous.image_path if keep_custom_image else None
+    image_metadata = previous.image_metadata if keep_custom_image else None
     if not image_path:
         with tempfile.TemporaryDirectory(prefix="section-image-") as temp_dir:
             asset = await asyncio.to_thread(
@@ -645,6 +651,9 @@ async def push_section_node(state: BaseState) -> dict:
     async with SessionLocal() as session:
         await session.execute(stmt)
         await session.commit()
+
+    if previous_image_path and previous_image_path != image_path:
+        await storage.delete_quiet(IMAGES_BUCKET, [previous_image_path])
 
     update_state = {
         "current_node": "push_section",
