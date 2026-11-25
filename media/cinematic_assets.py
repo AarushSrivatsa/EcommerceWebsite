@@ -87,6 +87,7 @@ def search_and_download(
     query: str,
     destination_dir: pathlib.Path,
     asset_id: str,
+    exclude_titles: set[str] | None = None,
 ) -> dict | None:
     """Find the best free Commons image for a beat, download it, and return attribution."""
     clean_query = " ".join(str(query or "").split())[:180]
@@ -116,6 +117,8 @@ def search_and_download(
         for page in sorted(pages, key=lambda value: value.get("index", 0)):
             metadata = info(page)
             if not FREE.search(metadata.get("license") or ""):
+                continue
+            if metadata.get("title") in (exclude_titles or set()):
                 continue
             mime = str(metadata.get("mime") or "").lower()
             if mime not in {"image/jpeg", "image/png", "image/webp"}:

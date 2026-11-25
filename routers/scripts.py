@@ -84,7 +84,6 @@ class ScriptCreate(BaseModel):
     total_sections: int | None = Field(default=None, ge=1, le=200)
     voice_model: str = "Zoey"
     video_type: Literal["facts", "story"] | None = None
-    render_mode: Literal["image", "cinematic"] = "cinematic"
     similarity_threshold: float | None = Field(default=None, ge=0.5, le=1)
 
 
@@ -101,7 +100,7 @@ async def create_script(body: ScriptCreate):
         sections_completed=0,
     )
     async with SessionLocal() as session:
-        session.add(State(**base.model_dump(), render_mode=body.render_mode))
+        session.add(State(**base.model_dump(), render_mode="image"))
         await session.flush()
         await session.execute(
             update(State)
@@ -133,7 +132,6 @@ async def get_script(script_id: uuid.UUID):
 class ScriptUpdate(BaseModel):
     voice_model: str | None = None
     words_per_minute: int | None = Field(default=None, ge=60, le=300)
-    render_mode: Literal["image", "cinematic"] | None = None
     similarity_threshold: float | None = Field(default=None, ge=0.5, le=1)
 
 

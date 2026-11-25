@@ -1,7 +1,11 @@
 import asyncio
 import json
 import logging
+import mimetypes
 import re
+import tempfile
+import uuid
+from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
@@ -11,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 import memory
 import database.storage as storage
 from config import IMAGES_BUCKET
+from media.cinematic_assets import search_and_download
 from .BaseState import BaseState
 from database.initialization import SessionLocal
 from database.models import Section, State
@@ -301,60 +306,35 @@ async def verify_section_grounding(text: str, sources: list[dict]) -> tuple[floa
 
 
 async def make_visual_plan(text: str) -> list[dict]:
-    """Create a source-aware storyboard that can be illustrated from real web assets."""
-    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text.strip()) if part.strip()]
-    if not paragraphs:
-        return []
+    """Plan one clear section heading and one authentic, searchable still image."""
+    clean_text = " ".join(text.split())
     try:
         reply = await ask(summary_llm, [
             ("system",
-             "Plan a premium documentary / explainer film using the open-source Cinematic Skill workflow. "
-             "Return JSON only with a 'beats' array, exactly one beat per supplied paragraph, in order. "
-             "Each beat must have: 'visual' (specific thing the viewer should see), "
-             "'image_search_query' (a concise Wikimedia Commons search query for an authentic, relevant, "
-             "freely reusable photograph, archive image, object, map or diagram; name the actual subject, "
-             "person, place, event or object, not a generic mood), 'image_kind' ('photo', 'paper', 'doc' or 'color'), "
-             "'on_screen_text' (optional, max 5 words), 'camera' (a purposeful camera move), "
-             "'hero_type' ('archive', 'document', 'map', 'diagram', 'object' or 'card'), "
-             "'map_places' (zero to three geographic place names explicitly relevant to this paragraph; "
-             "only places actually named or unambiguously referenced, never guessed). "
-             "Prefer real historical / documentary images over decorative graphics. Never invent a source, "
-             "never use an illustrative image as evidence, and never invent a real person's likeness. "
-             "If a real image is unlikely to exist, search for the relevant object, place, scientific diagram "
-             "or primary-source document. Keep each visual distinct from neighbouring beats."),
-            ("user", json.dumps({"paragraphs": paragraphs, "topic": text[:1200]}, ensure_ascii=False)),
+             "Prepare one narrated explainer section for a still-image video. "
+             "Return JSON only with: 'title' (a concise, specific 4-9 word headline), "
+             "'visual' (the real subject the image should show), and "
+             "'image_search_query' (a concise Wikimedia Commons query for a public-domain, "
+             "CC0, CC BY or CC BY-SA photograph or archival image). "
+             "Choose a concrete subject, person, place, object or event that genuinely illustrates "
+             "the narration. Do not suggest a cinematic sequence, motion, effects, maps or graphic design. "
+             "Do not invent a source or use a merely decorative picture."),
+            ("user", clean_text[:6000]),
         ])
         data = json.loads(reply[reply.find("{"):reply.rfind("}") + 1])
-        beats = data.get("beats", [])
-        if isinstance(beats, list) and len(beats) == len(paragraphs):
-            clean = []
-            for paragraph, beat in zip(paragraphs, beats):
-                if not isinstance(beat, dict) or not str(beat.get("visual", "")).strip():
-                    raise ValueError("invalid visual beat")
-                visual = str(beat["visual"])[:500]
-                clean.append({
-                    "narration": paragraph,
-                    "visual": visual,
-                    "image_search_query": str(beat.get("image_search_query") or visual)[:180],
-                    "image_kind": beat.get("image_kind") if beat.get("image_kind") in {"photo", "paper", "doc", "color"} else "photo",
-                    "hero_type": beat.get("hero_type") if beat.get("hero_type") in {"archive", "document", "map", "diagram", "object", "card"} else "archive",
-                    "map_places": [str(place)[:100] for place in beat.get("map_places", [])[:3] if isinstance(place, str) and place.strip()] if isinstance(beat.get("map_places"), list) else [],
-                    "on_screen_text": str(beat.get("on_screen_text") or "")[:80],
-                    "camera": str(beat.get("camera") or "slow push-in")[:100],
-                })
-            return clean
+        title = " ".join(str(data.get("title") or "").split())[:100]
+        visual = " ".join(str(data.get("visual") or "").split())[:500]
+        query = " ".join(str(data.get("image_search_query") or visual).split())[:180]
+        if title and visual and query:
+            return [{"section_title": title, "visual": visual, "image_search_query": query}]
     except Exception as exc:
-        log.warning("visual beat planning failed: %s", exc)
+        log.warning("section title and image planning failed: %s", exc)
+
     return [{
-        "narration": paragraph,
-        "visual": paragraph,
-        "image_search_query": paragraph[:180],
-        "image_kind": "photo",
-        "hero_type": "archive",
-        "map_places": [],
-        "on_screen_text": "",
-        "camera": "slow push-in",
-    } for paragraph in paragraphs]
+        "section_title": " ".join(clean_text.split()[:9])[:90] or "Untitled section",
+        "visual": clean_text[:500],
+        "image_search_query": clean_text[:180],
+    }]
 
 
 # ── router ────────────────────────────────────────────────────────────────────
@@ -558,42 +538,80 @@ async def writer_node(state: BaseState) -> dict:
 
 # ── push ──────────────────────────────────────────────────────────────────────
 async def push_section_node(state: BaseState) -> dict:
-    """Saves the approved section (insert, or replace if that position exists) with a suggested image
-    description, and clears the waiting section. The user's image is kept on a rewrite, but the section's
-    video is marked as needing a re-render (content_rev is bumped)."""
+    """Save one editable, narrated section with one sourced image."""
     text = state.generator_response
     embedding = await embed(text)
     visual_plan = state.visual_plan or await make_visual_plan(text)
-    image_prompt = next((beat.get("visual") for beat in visual_plan if beat.get("visual")), None)
-    if not image_prompt:
-        image_prompt = await suggest_image_prompt(text)
+    plan = visual_plan[0] if visual_plan else {}
+    section_title = (
+        " ".join(str(plan.get("section_title") or "").split())[:100]
+        or " ".join(text.split()[:9])[:90]
+        or "Untitled section"
+    )
+    image_prompt = (
+        " ".join(str(plan.get("image_search_query") or plan.get("visual") or "").split())[:500]
+        or await suggest_image_prompt(text)
+    )
 
     async with SessionLocal() as session:
-        project_render_mode = await session.scalar(
-            select(State.render_mode).where(State.id == state.id)
-        ) or "cinematic"
-        previous_visual_plan = await session.scalar(
-            select(Section.visual_plan).where(
-                Section.state_id == state.id,
-                Section.position == state.current_section,
+        previous = (
+            await session.execute(
+                select(Section).where(
+                    Section.state_id == state.id,
+                    Section.position == state.current_section,
+                )
             )
-        )
-    previous_beat_paths = [
-        beat.get("image_path")
-        for beat in (previous_visual_plan or [])
-        if beat.get("image_path")
-    ]
+        ).scalar_one_or_none()
+
+    # Preserve an image the user has already selected when rewriting a section.
+    image_path = previous.image_path if previous else None
+    image_metadata = previous.image_metadata if previous else None
+    if not image_path:
+        with tempfile.TemporaryDirectory(prefix="section-image-") as temp_dir:
+            asset = await asyncio.to_thread(
+                search_and_download,
+                image_prompt or section_title,
+                Path(temp_dir),
+                f"section-{state.current_section}",
+            )
+            if asset:
+                local = Path(asset["path"])
+                object_path = (
+                    f"{state.id}/{state.current_section}-commons-"
+                    f"{uuid.uuid4().hex[:10]}{local.suffix}"
+                )
+                await storage.upload_file(
+                    IMAGES_BUCKET,
+                    object_path,
+                    local,
+                    mimetypes.guess_type(local.name)[0] or "image/jpeg",
+                )
+                image_path = object_path
+                image_metadata = {
+                    "origin": "commons",
+                    "title": asset.get("title"),
+                    "credit": asset.get("credit"),
+                    "license": asset.get("license"),
+                    "license_url": asset.get("license_url"),
+                    "source_url": asset.get("source_url"),
+                    "query": asset.get("query") or image_prompt,
+                }
+            else:
+                image_metadata = {"origin": "none", "query": image_prompt}
 
     stmt = insert(Section).values(
         state_id=state.id,
         position=state.current_section,
         text=text,
+        title=section_title,
         word_count=state.generated_response_word_count or len(text.split()),
         embedding=embedding,
         image_prompt=image_prompt,
+        image_path=image_path,
+        image_metadata=image_metadata,
         sources=state.retrieved_sources or [],
-        visual_plan=visual_plan,
-        render_mode=project_render_mode,
+        visual_plan=[],
+        render_mode="image",
         similarity_score=state.similarity_score,
         similarity_threshold=similarity_limit(state),
         grounding_score=state.grounding_score,
@@ -605,12 +623,15 @@ async def push_section_node(state: BaseState) -> dict:
         index_elements=["state_id", "position"],
         set_={
             "text": stmt.excluded.text,
+            "title": stmt.excluded.title,
             "word_count": stmt.excluded.word_count,
             "embedding": stmt.excluded.embedding,
-            "image_prompt": stmt.excluded.image_prompt,      # image_path is not touched
+            "image_prompt": stmt.excluded.image_prompt,
+            "image_path": stmt.excluded.image_path,
+            "image_metadata": stmt.excluded.image_metadata,
             "sources": stmt.excluded.sources,
-            "visual_plan": stmt.excluded.visual_plan,
-            "render_mode": stmt.excluded.render_mode,
+            "visual_plan": [],
+            "render_mode": "image",
             "similarity_score": stmt.excluded.similarity_score,
             "similarity_threshold": stmt.excluded.similarity_threshold,
             "grounding_score": stmt.excluded.grounding_score,
@@ -625,15 +646,7 @@ async def push_section_node(state: BaseState) -> dict:
         await session.execute(stmt)
         await session.commit()
 
-    new_beat_paths = {
-        beat.get("image_path")
-        for beat in visual_plan
-        if beat.get("image_path")
-    }
-    obsolete_paths = [path for path in previous_beat_paths if path not in new_beat_paths]
-    await storage.delete_quiet(IMAGES_BUCKET, obsolete_paths)
-
-    update = {                                   # nothing is waiting any more, so the router moves on
+    update_state = {
         "current_node": "push_section",
         "generator_response": None,
         "generated_response_title": None,
@@ -645,6 +658,6 @@ async def push_section_node(state: BaseState) -> dict:
         "visual_plan": None,
     }
     async with SessionLocal() as session:
-        await session.merge(State(**state.model_copy(update=update).model_dump()))
+        await session.merge(State(**state.model_copy(update=update_state).model_dump()))
         await session.commit()
-    return update
+    return update_state

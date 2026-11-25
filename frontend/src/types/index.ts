@@ -4,7 +4,6 @@ export type VideoType = 'auto' | 'facts' | 'story'
 export type GenerationStatus = 'generating' | 'ready' | 'failed'
 export type FinalVideoStatus = 'none' | 'processing' | 'ready' | 'outdated' | 'failed'
 export type SectionVideoStatus = 'pending' | 'processing' | 'ready' | 'failed'
-export type SectionRenderMode = 'image' | 'cinematic'
 
 export interface Voice {
   id: string
@@ -35,17 +34,28 @@ export interface VisualBeat {
   imageSearchQuery?: string | null
 }
 
+export interface ImageMetadata {
+  origin: 'commons' | 'user' | 'none'
+  title?: string | null
+  credit?: string | null
+  license?: string | null
+  licenseUrl?: string | null
+  sourceUrl?: string | null
+  query?: string | null
+}
+
 export interface Section {
   position: number
   text: string
+  title: string | null
   wordCount: number
   imagePrompt: string | null
+  imageMetadata: ImageMetadata | null
   imageUrl: string | null
   videoUrl: string | null
   creditsUrl: string | null
   subtitleUrl: string | null
   videoStatus: SectionVideoStatus
-  renderMode: SectionRenderMode
   videoError: string | null
   sources: ResearchSource[]
   visualPlan: VisualBeat[]

@@ -343,12 +343,19 @@ def _build_video(
     video_path: Path,
     size: tuple[int, int] = VIDEO_SIZE,
     fps: int = VIDEO_FPS,
+    fade_duration: float = 0.0,
 ) -> None:
     width, height = size
     list_path = video_path.with_name(f"{video_path.stem}.tmp.txt")
 
     lines = []
-    for image, duration in zip(images, durations):
+    media_duration = max(0.1, sum(durations))
+    fade = max(0.0, min(float(fade_duration), media_duration / 3))
+    total_duration = media_duration + (2 * fade)
+    scene_durations = list(durations)
+    if fade > 0 and len(scene_durations) == 1:
+        scene_durations[0] += 2 * fade
+    for image, duration in zip(images, scene_durations):
         lines.append(_concat_line_path(image))
         lines.append(f"duration {duration:.4f}")
 
@@ -361,6 +368,20 @@ def _build_video(
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
         "setsar=1,format=yuv420p"
     )
+    audio_filter = None
+    if fade > 0:
+        fade_out_start = fade + media_duration
+        video_filter += (
+            f",fade=t=in:st=0:d={fade:.4f}"
+            f",fade=t=out:st={fade_out_start:.4f}:d={fade:.4f}"
+        )
+        lead_ms = int(round(fade * 1000))
+        audio_filter = (
+            f"adelay={lead_ms}:all=1,"
+            f"apad=pad_dur={fade:.4f},"
+            f"afade=t=in:st=0:d={fade:.4f},"
+            f"afade=t=out:st={fade_out_start:.4f}:d={fade:.4f}"
+        )
 
     try:
         subprocess.run(
@@ -379,6 +400,7 @@ def _build_video(
                 str(audio_path),
                 "-vf",
                 video_filter,
+                *(["-af", audio_filter] if audio_filter else []),
                 "-filter_threads",
                 "1",
                 "-filter_complex_threads",
@@ -403,7 +425,8 @@ def _build_video(
                 "192k",
                 "-movflags",
                 "+faststart",
-                "-shortest",
+                "-t",
+                f"{total_duration:.4f}",
                 str(video_path),
             ],
             check=True,
@@ -412,13 +435,117 @@ def _build_video(
         list_path.unlink(missing_ok=True)
 
 
+def _make_title_frame(
+    image_path: Path,
+    output_path: Path,
+    title_label: str,
+    title: str,
+) -> Path:
+    """Draw the section label and headline in a centered title block."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    with Image.open(image_path) as source:
+        image = source.convert("RGB")
+    width, height = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+    ]
+
+    def load_font(size: int):
+        for path in font_paths:
+            try:
+                return ImageFont.truetype(path, size=size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
+
+    label_font = load_font(max(24, int(height * 0.032)))
+    title_size = max(38, int(height * 0.064))
+    title_font = load_font(title_size)
+    max_width = int(width * 0.76)
+    words = " ".join(str(title or "Untitled").split()).split()
+
+    def wrap(active_font):
+        lines, current = [], ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if current and draw.textbbox((0, 0), candidate, font=active_font)[2] > max_width:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        return lines
+
+    lines = wrap(title_font)
+    while len(lines) > 3 and title_size > 34:
+        title_size = max(34, int(title_size * 0.9))
+        title_font = load_font(title_size)
+        lines = wrap(title_font)
+    if len(lines) > 3:
+        lines = [" ".join(words[:12]) + ("…" if len(words) > 12 else "")]
+
+    label_box = draw.textbbox((0, 0), title_label, font=label_font)
+    label_height = label_box[3] - label_box[1]
+    line_heights = [
+        draw.textbbox((0, 0), line, font=title_font)[3] - draw.textbbox((0, 0), line, font=title_font)[1]
+        for line in lines
+    ]
+    line_gap = max(8, int(title_size * 0.18))
+    label_gap = max(12, int(height * 0.016))
+    title_height = sum(line_heights) + max(0, len(lines) - 1) * line_gap
+    pad_x, pad_y = int(width * 0.052), int(height * 0.04)
+    text_width = max(
+        [label_box[2] - label_box[0]]
+        + [draw.textbbox((0, 0), line, font=title_font)[2] for line in lines]
+    )
+    panel_width = min(int(width * 0.88), text_width + pad_x * 2)
+    panel_height = label_height + label_gap + title_height + pad_y * 2
+    left, top = (width - panel_width) // 2, (height - panel_height) // 2
+    draw.rounded_rectangle(
+        (left, top, left + panel_width, top + panel_height),
+        radius=max(18, int(height * 0.024)),
+        fill=(7, 12, 20, 178),
+        outline=(255, 255, 255, 46),
+        width=max(1, int(height * 0.0015)),
+    )
+    label_width = label_box[2] - label_box[0]
+    draw.text(
+        ((width - label_width) / 2, top + pad_y),
+        title_label,
+        font=label_font,
+        fill=(224, 233, 243, 255),
+    )
+    current_y = top + pad_y + label_height + label_gap
+    for index, line in enumerate(lines):
+        box = draw.textbbox((0, 0), line, font=title_font)
+        text_width = box[2] - box[0]
+        draw.text(
+            ((width - text_width) / 2, current_y),
+            line,
+            font=title_font,
+            fill=(255, 255, 255, 255),
+            stroke_width=max(1, title_size // 32),
+            stroke_fill=(0, 0, 0, 90),
+        )
+        current_y += line_heights[index] + line_gap
+    image.save(output_path, quality=94)
+    return output_path
+
+
 def build_image_video(
     image_path: Path,
     audio_path: Path,
     video_path: Path,
     duration_sec: float,
+    *,
+    title_label: str = "",
+    title: str = "",
 ) -> None:
-    """Create the original single-still scene mode at the same 1080p/30fps quality."""
+    """Create one titled still-image section with matching audio/video fades."""
     duration = max(0.1, float(duration_sec))
     from PIL import Image
 
@@ -428,14 +555,20 @@ def build_image_video(
             raise ValueError(
                 f"single image contains {pixels:,} pixels; the maximum is 16,000,000"
             )
-    _build_video(
-        [Path(image_path)],
-        [duration],
-        Path(audio_path),
-        Path(video_path),
-        size=VIDEO_SIZE,
-        fps=VIDEO_FPS,
-    )
+    framed_image = Path(video_path).with_name(f"{Path(video_path).stem}-title.jpg")
+    _make_title_frame(Path(image_path), framed_image, title_label, title)
+    try:
+        _build_video(
+            [framed_image],
+            [duration],
+            Path(audio_path),
+            Path(video_path),
+            size=VIDEO_SIZE,
+            fps=VIDEO_FPS,
+            fade_duration=0.6,
+        )
+    finally:
+        framed_image.unlink(missing_ok=True)
 
 
 def generate_voiceover(

@@ -79,8 +79,8 @@ export const projectsStore = {
     delete state.sections[id]
   },
 
-  async updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number, renderMode: Parameters<typeof service.updateSettings>[4]) {
-    upsert(await service.updateSettings(id, voiceModel, wordsPerMinute, similarityThreshold, renderMode))
+  async updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number) {
+    upsert(await service.updateSettings(id, voiceModel, wordsPerMinute, similarityThreshold))
     await this.loadSections(id)
   },
 
@@ -88,6 +88,10 @@ export const projectsStore = {
   // Editing a section only marks its video out of date; videos are built by the buttons (buildSectionVideos / convertIntoVideo).
   async updateSectionText(id: string, position: number, text: string) {
     setSection(id, await service.updateSectionText(id, position, text))
+  },
+
+  async updateSectionContent(id: string, position: number, text: string, title: string) {
+    setSection(id, await service.updateSectionContent(id, position, text, title))
   },
 
   async rewriteSection(id: string, position: number, instruction: string) {
@@ -104,16 +108,6 @@ export const projectsStore = {
     await this.refreshProject(id)
   },
 
-  async setVisualBeatImage(id: string, position: number, beatIndex: number, file: File) {
-    setSection(id, await service.setVisualBeatImage(id, position, beatIndex, file))
-    await this.refreshProject(id)
-  },
-
-  async removeVisualBeatImage(id: string, position: number, beatIndex: number) {
-    setSection(id, await service.removeVisualBeatImage(id, position, beatIndex))
-    await this.refreshProject(id)
-  },
-
   async addSection(id: string, text: string, position?: number) {
     await service.addSection(id, text, position)
     await this.loadSections(id) // positions of later sections shifted
@@ -126,13 +120,13 @@ export const projectsStore = {
     await this.refreshProject(id)
   },
 
-  async setSectionRenderMode(id: string, position: number, renderMode: Parameters<typeof service.setSectionRenderMode>[2]) {
-    setSection(id, await service.setSectionRenderMode(id, position, renderMode))
+  async rerenderSection(id: string, position: number) {
+    setSection(id, await service.rerenderSection(id, position))
     await this.refreshProject(id)
   },
 
-  async rerenderSection(id: string, position: number) {
-    setSection(id, await service.rerenderSection(id, position))
+  async rerollSectionImage(id: string, position: number) {
+    setSection(id, await service.rerollSectionImage(id, position))
   },
 
   // ---- videos ----

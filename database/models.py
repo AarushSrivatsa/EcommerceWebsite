@@ -47,7 +47,7 @@ class State(Base):
     sections_completed: Mapped[int | None] = mapped_column(Integer)
     video_type: Mapped[str | None] = mapped_column(Text)
     render_mode: Mapped[str] = mapped_column(
-        Text, default="cinematic", server_default="cinematic"
+        Text, default="image", server_default="image"
     )
 
     router_prompt: Mapped[str | None] = mapped_column(Text)
@@ -122,6 +122,7 @@ class Section(Base):
     )
     position: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(Text)
     word_count: Mapped[int] = mapped_column(Integer)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
     image_prompt: Mapped[str | None] = mapped_column(Text)
@@ -133,9 +134,10 @@ class Section(Base):
     grounding_feedback: Mapped[str | None] = mapped_column(Text)
 
     render_mode: Mapped[str] = mapped_column(
-        Text, default="cinematic", server_default="cinematic"
+        Text, default="image", server_default="image"
     )
     image_path: Mapped[str | None] = mapped_column(Text)
+    image_metadata: Mapped[dict | None] = mapped_column(JSONB)
     audio_path: Mapped[str | None] = mapped_column(Text)
     video_path: Mapped[str | None] = mapped_column(Text)
     credits_path: Mapped[str | None] = mapped_column(Text)

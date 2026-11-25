@@ -1,5 +1,5 @@
 // The only file that knows the backend's endpoints and snake_case response shapes.
-import type { FinalVideoStatus, GenerationStatus, NewProjectForm, Project, Section, SectionRenderMode, SectionVideoStatus } from '@/types'
+import type { FinalVideoStatus, GenerationStatus, ImageMetadata, NewProjectForm, Project, Section, SectionVideoStatus } from '@/types'
 import { api } from './api'
 
 // ---- raw backend shapes (routers/scripts.py, routers/sections.py) ----
@@ -13,7 +13,6 @@ interface ScriptDto {
   id: string
   user_prompt: string
   video_type: 'facts' | 'story' | null
-  render_mode: SectionRenderMode
   voice_model: string | null
   words_per_minute: number
   similarity_threshold: number
@@ -32,8 +31,10 @@ interface ScriptDto {
 interface SectionDto {
   position: number
   text: string
+  title: string | null
   word_count: number
   image_prompt: string | null
+  image_metadata: ImageMetadata | null
   image_url: string | null
   audio_url: string | null
   video_url: string | null
@@ -83,7 +84,6 @@ function toProject(s: ScriptDto): Project {
     id: s.id,
     userPrompt: s.user_prompt,
     videoType: s.video_type ?? 'auto',
-    renderMode: s.render_mode ?? 'cinematic',
     voiceModel: toVoiceModel(s.voice_model),
     wordsPerMinute: s.words_per_minute,
     similarityThreshold: s.similarity_threshold,
@@ -106,8 +106,10 @@ function toSection(s: SectionDto): Section {
   return {
     position: s.position,
     text: s.text,
+    title: s.title ?? null,
     wordCount: s.word_count,
     imagePrompt: s.image_prompt,
+    imageMetadata: s.image_metadata ?? null,
     imageUrl: s.image_url,
     videoUrl: s.video_url,
     creditsUrl: s.credits_url ?? null,
@@ -155,7 +157,6 @@ export async function createProject(form: NewProjectForm): Promise<Project> {
     total_sections: form.totalSections,
     voice_model: form.voiceModel,
     video_type: form.videoType === 'auto' ? null : form.videoType,
-    render_mode: form.renderMode,
     similarity_threshold: form.similarityThreshold,
   })
   return toProject(dto)
@@ -165,12 +166,11 @@ export async function resumeGeneration(id: string): Promise<Project> {
   return toProject(await api.post<ScriptDto>(`/scripts/${id}/generate`))
 }
 
-export async function updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number, renderMode: SectionRenderMode): Promise<Project> {
+export async function updateSettings(id: string, voiceModel: string, wordsPerMinute: number, similarityThreshold: number): Promise<Project> {
   return toProject(await api.patch<ScriptDto>(`/scripts/${id}`, {
     voice_model: voiceModel,
     words_per_minute: wordsPerMinute,
     similarity_threshold: similarityThreshold,
-    render_mode: renderMode,
   }))
 }
 
@@ -185,6 +185,10 @@ export async function listSections(id: string): Promise<Section[]> {
 
 export async function updateSectionText(id: string, position: number, text: string): Promise<Section> {
   return toSection(await api.patch<SectionDto>(`/scripts/${id}/sections/${position}`, { text }))
+}
+
+export async function updateSectionContent(id: string, position: number, text: string, title: string): Promise<Section> {
+  return toSection(await api.patch<SectionDto>(`/scripts/${id}/sections/${position}`, { text, title }))
 }
 
 /** Adds a section at `position` (others move down). Omit to append. */
@@ -206,20 +210,8 @@ export async function removeSectionImage(id: string, position: number): Promise<
   return toSection(await api.delete<SectionDto>(`/scripts/${id}/sections/${position}/image`))
 }
 
-export async function setVisualBeatImage(id: string, position: number, beatIndex: number, file: File): Promise<Section> {
-  const form = new FormData()
-  form.append('file', file)
-  return toSection(await api.put<SectionDto>(`/scripts/${id}/sections/${position}/image/beats/${beatIndex}`, form))
-}
-
-export async function removeVisualBeatImage(id: string, position: number, beatIndex: number): Promise<Section> {
-  return toSection(await api.delete<SectionDto>(`/scripts/${id}/sections/${position}/image/beats/${beatIndex}`))
-}
-
-export async function setSectionRenderMode(id: string, position: number, renderMode: SectionRenderMode): Promise<Section> {
-  return toSection(await api.patch<SectionDto>(`/scripts/${id}/sections/${position}/render-mode`, {
-    render_mode: renderMode,
-  }))
+export async function rerollSectionImage(id: string, position: number): Promise<Section> {
+  return toSection(await api.post<SectionDto>(`/scripts/${id}/sections/${position}/image/reroll`))
 }
 
 export async function rerenderSection(id: string, position: number): Promise<Section> {

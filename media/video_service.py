@@ -1,8 +1,6 @@
 """Render section videos and stitch them into a final video."""
 import asyncio
 import logging
-import mimetypes
-import re
 import shutil
 import subprocess
 import tempfile
@@ -18,8 +16,6 @@ from config import OUTPUT_DIR, IMAGES_BUCKET, AUDIOS_BUCKET, VIDEOS_BUCKET
 from database.initialization import SessionLocal
 from database.models import Section, State
 from media.voice import DEFAULT_VOICE, build_image_video, generate_voiceover
-from media.cinematic_renderer import render_cinematic_video
-from media.cinematic_assets import search_and_download
 
 log = logging.getLogger("video_service")
 _render_lock = asyncio.Lock()
@@ -113,159 +109,40 @@ async def render_section_video(section_id: uuid.UUID) -> None:
         uploaded_subtitle_path = None
         uncommitted_asset_paths: list[str] = []
         try:
-            visual_plan = section.visual_plan or []
-            paragraphs = [
-                paragraph for paragraph in re.split(r"\n\s*\n", section.text.strip())
-                if paragraph.strip()
-            ]
-            paragraph_count = max(1, len(paragraphs))
-            render_mode = getattr(section, "render_mode", "cinematic") or "cinematic"
-
-            single_image = None
-            beat_images: list[Path | None] = []
-            if render_mode == "image":
-                image_path = section.image_path
-                if not image_path:
-                    raise RuntimeError(
-                        "Single image mode needs one scene image. Upload a scene image "
-                        "or switch to Cinematic Skill for automatic web-sourced visuals."
-                    )
-                single_image = await storage.download_to(
-                    IMAGES_BUCKET,
-                    image_path,
-                    folder / f"single-image{Path(image_path).suffix}",
+            if not section.image_path:
+                raise RuntimeError(
+                    "This section has no image yet. Reroll the image or upload your own before rendering."
                 )
-            else:
-                # One beat per paragraph. Cinematic mode sources its own cleared images;
-                # user uploads are never a fallback or an override.
-                if len(visual_plan) != paragraph_count:
-                    visual_plan = [
-                        {
-                            "narration": paragraph,
-                            "visual": paragraph,
-                            "image_search_query": paragraph[:180],
-                            "image_kind": "photo",
-                            "hero_type": "archive",
-                            "map_places": [],
-                            "on_screen_text": "",
-                            "camera": "slow push-in",
-                        }
-                        for paragraph in paragraphs
-                    ]
-
-                new_asset_paths: list[str] = []
-                uncommitted_asset_paths = new_asset_paths
-                try:
-                    for index, beat in enumerate(visual_plan):
-                        existing_path = beat.get("image_path") if beat.get("image_origin") == "commons" else None
-                        if existing_path:
-                            local = await storage.download_to(
-                                IMAGES_BUCKET,
-                                existing_path,
-                                folder / f"beat-{index}{Path(existing_path).suffix or '.jpg'}",
-                            )
-                            beat_images.append(local)
-                            continue
-
-                        # The upstream skill searches Wikimedia Commons and refuses
-                        # ambiguous/non-free licences. No uploaded fallback is required.
-                        query = beat.get("image_search_query") or beat.get("visual") or paragraphs[index]
-                        asset = await asyncio.to_thread(
-                            search_and_download,
-                            query,
-                            folder / "commons",
-                            f"beat-{index + 1:02d}",
-                        )
-                        if asset:
-                            local = Path(asset["path"])
-                            object_path = (
-                                f"{state.id}/{section.id}-commons-{index}-"
-                                f"{uuid.uuid4().hex[:8]}{local.suffix}"
-                            )
-                            await storage.upload_file(IMAGES_BUCKET, object_path, local, mimetypes.guess_type(local.name)[0] or "image/jpeg")
-                            new_asset_paths.append(object_path)
-                            log.info(
-                                "Cinematic Skill sourced beat %s from Wikimedia Commons: %s (%s)",
-                                index + 1,
-                                asset.get("title"),
-                                asset.get("license"),
-                            )
-                            beat.update({
-                                "image_path": object_path,
-                                "image_origin": "commons",
-                                "image_title": asset.get("title"),
-                                "image_credit": asset.get("credit"),
-                                "image_license": asset.get("license"),
-                                "image_license_url": asset.get("license_url"),
-                                "image_source_url": asset.get("source_url"),
-                                "image_date": asset.get("date"),
-                                "image_description": asset.get("description"),
-                            })
-                            beat_images.append(local)
-                        else:
-                            log.info("No cleared Commons image for beat %s; using the Cinematic Skill's native non-photo treatment", index + 1)
-                            beat_images.append(None)
-
-                    # Save source attribution on the beat itself so users can inspect
-                    # image origins/licences and future rebuilds reuse the exact assets.
-                    async with SessionLocal() as session:
-                        applied = (
-                            await session.execute(
-                                update(Section)
-                                .where(
-                                    Section.id == section_id,
-                                    Section.content_rev == revision,
-                                )
-                                .values(visual_plan=visual_plan)
-                                .returning(Section.id)
-                            )
-                        ).scalar_one_or_none()
-                        await session.commit()
-                    if applied is None:
-                        await storage.delete_quiet(IMAGES_BUCKET, new_asset_paths)
-                        uncommitted_asset_paths = []
-                        raise RuntimeError("the section changed while cinematic assets were being sourced; retry the render")
-                    uncommitted_asset_paths = []
-                except Exception:
-                    # Keep successfully downloaded assets only when their attribution was
-                    # committed; otherwise remove their temporary Storage copies.
-                    raise
+            single_image = await storage.download_to(
+                IMAGES_BUCKET,
+                section.image_path,
+                folder / f"section-image{Path(section.image_path).suffix or '.jpg'}",
+            )
+            heading_label = "Fact" if state.video_type == "facts" else "Chapter"
+            heading_text = f"{heading_label} {section.position}: {section.title or 'Untitled'}"
+            spoken_text = f"{heading_text}. {section.text}"
 
             async with memory.heavy:
                 memory.report(f"narration start (section {section.position})")
                 audio, voice_timing = await asyncio.to_thread(
                     _make_section_audio,
-                    section.text,
+                    spoken_text,
                     state.words_per_minute,
                     state.voice_model,
                     folder,
                 )
                 video = folder / "section.mp4"
-                if render_mode == "image":
-                    memory.report(f"single-image FFmpeg render start (section {section.position})")
-                    await asyncio.to_thread(
-                        build_image_video,
-                        single_image,
-                        audio,
-                        video,
-                        voice_timing["duration_sec"],
-                    )
-                else:
-                    memory.report(f"Cinematic Skill render start (section {section.position})")
-                    await asyncio.to_thread(
-                        render_cinematic_video,
-                        story_text=section.text,
-                        audio_path=audio,
-                        output_path=video,
-                        duration_sec=voice_timing["duration_sec"],
-                        paragraph_durations=voice_timing["paragraph_durations_sec"],
-                        visual_plan=visual_plan if render_mode == "cinematic" else [],
-                        image_paths=beat_images,
-                        project_title=state.user_prompt,
-                        section_position=section.position,
-                        video_type=state.video_type,
-                    )
-                memory.report(f"scene render done (section {section.position}, mode={render_mode})")
+                memory.report(f"still-image title-card render start (section {section.position})")
+                await asyncio.to_thread(
+                    build_image_video,
+                    single_image,
+                    audio,
+                    video,
+                    voice_timing["duration_sec"],
+                    title_label=f"{heading_label.upper()} {section.position}:",
+                    title=section.title or "Untitled",
+                )
+                memory.report(f"section render done (section {section.position})")
 
             audio_path = f"{state.id}/{section.id}-{revision}.mp3"
             video_path = f"{state.id}/{section.id}-{revision}.mp4"
