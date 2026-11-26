@@ -1,6 +1,6 @@
 # Cinematic Skill rendering
 
-The application vendors the upstream Cinematic Skill from https://github.com/Moh4696/cinematic-skill under its MIT licence. The upstream engine, asset tools, map builder, sound tools, captions, references and examples live in `vendor/cinematic_skill/`.
+The application vendors the rendering components it needs from the upstream Cinematic Skill (MIT-licensed). The retained engine, asset tools, map builder, sound tools and caption pipeline live in `vendor/cinematic_skill/skills/cinematic-film/scripts/`. Standalone agent installers, plugin manifests, authoring helpers and sample projects are intentionally omitted.
 
 ## One choice per project
 
