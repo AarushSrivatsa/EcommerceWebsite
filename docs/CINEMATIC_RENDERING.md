@@ -1,36 +1,38 @@
-# Cinematic Skill rendering
+# Video rendering workflows
 
-The application vendors the rendering components it needs from the upstream Cinematic Skill (MIT-licensed). The retained engine, asset tools, map builder, sound tools and caption pipeline live in `vendor/cinematic_skill/skills/cinematic-film/scripts/`. Standalone agent installers, plugin manifests, authoring helpers and sample projects are intentionally omitted.
+## Current application workflow
 
-## One choice per project
+The active FastAPI video-generation routes currently use a still-image renderer:
 
-Choose one mode when creating a project:
+1. Image-generation and image-reroll paths use `media.cinematic_assets.search_and_download()` to source Commons images. That module imports the upstream `fetch_commons.py` client and licence helpers.
+2. `POST /scripts/{script_id}/render_sections` calls `media.video_service.render_all_pending()`.
+3. Each section is rendered by `media.video_service.render_section_video()`, which calls `media.voice.build_image_video()` to create a titled still-image video with narration.
+4. `POST /convert_into_video/{script_id}` calls `media.video_service.convert_into_video()`, which concatenates the rendered section videos with FFmpeg.
 
-- **Cinematic Skill** (default): the AI makes one visual beat per narration paragraph. The app automatically searches Wikimedia Commons for relevant photos, checks the reuse licence, and downloads one suitable image per beat where available. No image upload or fallback image is needed.
-- **Image**: upload one still image for each section. That image stays on screen while the narration plays.
+In this active workflow, the only file under the vendored Cinematic Skill scripts directory that is imported by the app is `fetch_commons.py`, through `media.cinematic_assets`.
 
-The choice applies to every section. It can be changed later in Video settings; changing it marks the scenes out of date.
+## Separate Cinematic Skill integration
 
-## One-click video generation
+The repository also contains a separate integration implementation in:
 
-Press **Generate video** once. The app renders every section that needs updating, then joins the section MP4s into one final film.
+- `media/cinematic_renderer.py`
+- `media/cinematic_skill_runtime.py`
 
-For Cinematic Skill, the app runs the upstream preparation, map, Skia engine, sound-effects, audio-mix, credit and subtitle tools. Every sourced image is limited to Public Domain, CC0, CC BY or CC BY-SA, and its credit/licence is retained. If Commons has no suitable photo for a beat, the upstream visual language (documents, maps, diagrams or typography) is used; this is not a user-provided fallback image.
+That implementation can prepare a beat-based Cinematic Skill project and invoke the vendored Skia renderer, asset preparation, map, sound-effects, soundtrack, image-credit and caption scripts. However, the current API route flow has no call site for `render_cinematic_video()`; it is not the renderer currently used by the active section-generation endpoints.
 
-The app creates a structured beat plan and a repeatable scene using the upstream engine. It does not execute arbitrary LLM-generated Python. The separate upstream `motion-assets` skill is not included, so this is not photorealistic AI video generation.
+The following vendored scripts are retained because they are dependencies of that separate integration:
 
-## Runtime
+- `engine.py` and `render.py` — Skia scene engine and video rendering.
+- `get_fonts.py` and `prep_assets.py` — font and image/texture preparation.
+- `make_map.py` — map generation when a scene contains locations.
+- `build_sfx.py` and `mix_soundtrack.py` — sound-effect synthesis and audio mixing.
+- `fetch_commons.py` — image metadata/licensing and credits; also used by the active Commons image-source module.
+- `burn_captions.py` and `captions.py` — caption/SRT generation.
 
-The upstream renderer exports 1280×720 at 30 fps. It runs with one render worker to reduce memory use on small hosting instances. This does not guarantee that long renders will fit within a 512 MB instance; validate peak memory and execution limits on the deployed service.
+The standalone skill installer, agent/plugin manifests, authoring helpers and shipped demo projects are omitted because neither the active API workflow nor the retained integration invokes them.
 
-## Hosting notes
+## Deployment notes
 
-- The renderer runs with one worker to reduce peak memory. The 1280×720, 30 fps output is retained.
-- ONNX, BLAS and FFmpeg thread counts are bounded; large storage assets stream to disk rather than being buffered in API memory.
-- A 512 MB instance is not guaranteed to handle long renders. Check peak memory and execution limits on the deployed service.
+The active section-rendering path and the separate Cinematic Skill integration both use FFmpeg. The latter also uses Skia via `skia-python`, NumPy and Pillow. The Docker image installs the application-level pinned dependencies from the root `requirements.txt`.
 
-## API exposure
-
-The API allows the local Vite development origin by default. The production frontend is served by the same FastAPI origin. When hosting the frontend separately, set `CORS_ORIGINS` to exact trusted origins.
-
-CORS is not authentication. Before exposing this API to multiple users or the public internet, add Supabase Auth JWT verification and per-user ownership checks for projects, sections and YouTube channel operations. The current data model does not associate projects with authenticated users.
+Before exposing the API to multiple users or the public internet, add Supabase Auth JWT verification and per-user ownership checks for projects, sections and YouTube channel operations. CORS is not authentication, and the current data model does not associate projects with authenticated users.
